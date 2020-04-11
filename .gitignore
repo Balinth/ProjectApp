@@ -17,3 +17,4 @@ deploy
 
 // secrets, eg should never commit a ssl certificate to the repo, or the appsettings containing secrets
 *.pfx
+src/Server/appsettings.json
