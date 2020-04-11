@@ -26,8 +26,9 @@ var CONFIG = {
     devServerProxy: {
         // redirect requests that start with /api/ to the server on port 8085
         '/api/**': {
-            target: 'http://localhost:' + (process.env.SERVER_PROXY_PORT || "8085"),
-               changeOrigin: true
+            target: 'https://localhost:' + (process.env.SERVER_PROXY_PORT || "8085"),
+            secure: false,
+            changeOrigin: true
            },
         // redirect websocket requests that start with /socket/ to the server on the port 8085
         '/socket/**': {
@@ -109,6 +110,7 @@ module.exports = {
     },
     // Configuration for webpack-dev-server
     devServer: {
+        https: true,
         publicPath: '/',
         contentBase: resolve(CONFIG.assetsDir),
         host: '0.0.0.0',

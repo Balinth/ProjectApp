@@ -1,3 +1,4 @@
+open Fake.Core
 #r "paket: groupref build //"
 #load "./.fake/build.fsx/intellisense.fsx"
 
@@ -11,6 +12,8 @@ open System
 open Fake.Core
 open Fake.DotNet
 open Fake.IO
+
+open Newtonsoft.Json.Linq
 
 Target.initEnvironment ()
 
@@ -87,11 +90,15 @@ Target.create "Run" (fun _ ->
         runDotNet "watch run" serverPath
     }
     let client = async {
-        runTool yarnTool "webpack-dev-server" __SOURCE_DIRECTORY__
+        // obtain secret for tls cert
+        let appsettings = JObject.Parse(File.readAsString( serverPath + @"/appsettings.json"))
+        let certPath = serverPath + (string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Path"] )
+        let pw = string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Password"]
+        runTool yarnTool ("webpack-dev-server" + " --https --pfx=" + certPath + " --pfx-passphrase=" + pw) __SOURCE_DIRECTORY__
     }
     let browser = async {
         do! Async.Sleep 5000
-        openBrowser "http://localhost:8080"
+        openBrowser "https://localhost:8080"
     }
 
     let vsCodeSession = Environment.hasEnvironVar "vsCodeSession"

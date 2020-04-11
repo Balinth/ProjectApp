@@ -14,3 +14,6 @@ release.sh
 *.DotSettings.user
 deploy
 .ionide/
+
+// secrets, eg should never commit a ssl certificate to the repo, or the appsettings containing secrets
+*.pfx
