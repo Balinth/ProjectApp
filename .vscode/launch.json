@@ -6,20 +6,21 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "Build Server",
-            "program": "${workspaceFolder}/src/Server/bin/Debug/netcoreapp3.0/Server.dll",
+            "program": "${workspaceFolder}/src/Server/bin/Debug/netcoreapp3.1/Server.dll",
             "args": [],
             "logging": {
                 "moduleLoad": false
             },
             "stopAtEntry": false,
             "console": "internalConsole",
+            "cwd": "${workspaceFolder}/src/Server"
         },
         {
             "name": "Debug Client",
             "type": "chrome",
             "request": "launch",
             "preLaunchTask": "Watch Client",
-            "url": "http://localhost:8080",
+            "url": "https://localhost:8080",
             "webRoot": "${workspaceFolder}/src/Client",
             "sourceMaps": true,
             "sourceMapPathOverrides": {
@@ -31,7 +32,7 @@
             "type": "chrome",
             "request": "launch",
             "preLaunchTask": "Watch Client and Server",
-            "url": "http://localhost:8080",
+            "url": "https://localhost:8080",
             "env": {
                 "vsCodeSession":"true"
             },
