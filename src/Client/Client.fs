@@ -10,19 +10,24 @@ open Fulma
 open Thoth.Json
 
 open Shared
+open Language
+open Fable.Remoting.Client
 
 // The model holds data that you want to keep track of while the application is running
 // in this case, we are keeping track of a counter
 // we mark it as optional, because initially it will not be available from the client
 // the initial value will be requested from server
-type Model = { Counter: Counter option }
+type Model = { 
+    Language : Language.LStr -> string
+    User : UserInfo option
+}
 
 // The Msg type defines what events/actions can occur while the application is running
 // the state of the application changes *only* in reaction to these events
 type Msg =
-    | Increment
-    | Decrement
-    | InitialCountLoaded of Counter
+    | ChangeLanguage of Language
+    | GetUser
+    | UserDetails of UserInfo option
 
 module Server =
 
@@ -30,41 +35,56 @@ module Server =
     open Fable.Remoting.Client
 
     /// A proxy you can use to talk to server directly
-    let api : ICounterApi =
+    let api : ISecureAPI =
       Remoting.createApi()
       |> Remoting.withRouteBuilder Route.builder
-      |> Remoting.buildProxy<ICounterApi>
-let initialCounter = Server.api.initialCounter
+      |> Remoting.buildProxy<ISecureAPI>
+
+let logIn = Server.api.logIn
+let logOut = Server.api.logOut
+let getUser = Server.api.getUserDetails
 
 // defines the initial state and initial command (= side-effect) of the application
 let init () : Model * Cmd<Msg> =
-    let initialModel = { Counter = None }
-    let loadCountCmd =
-        Cmd.OfAsync.perform initialCounter () InitialCountLoaded
-    initialModel, loadCountCmd
+    let initialModel = { Language = getMLString English; User = None }
+    initialModel, Cmd.ofMsg GetUser
+
+
+let signIn =
+    let res = fun () -> Fetch.fetch @"/api/ISecureAPI/logInFOS" [
+        Fetch.Types.RequestProperties.Method Fetch.Types.HttpMethod.GET
+        Fetch.Types.RequestProperties.Mode Fetch.Types.RequestMode.Nocors
+        Fetch.requestHeaders [
+            Fetch.Types.Custom ("Sec-Fetch-Site", "none")
+            Fetch.Types.Custom ("fisfos", "none")
+            
+            ]
+        ]
+    res
+
+let unpackResp (resp : Fetch.Types.Response) =
+    Some {UserName = string resp.Ok; UserID = ""; UserEmail = ""} |> UserDetails
+    
 
 // The update function computes the next state of the application based on the current state and the incoming events/messages
 // It can also run side-effects (encoded as commands) like calling the server via Http.
 // these commands in turn, can dispatch messages to which the update function will react.
 let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
-    match currentModel.Counter, msg with
-    | Some counter, Increment ->
-        let nextModel = { currentModel with Counter = Some { Value = counter.Value + 1 } }
-        nextModel, Cmd.none
-    | Some counter, Decrement ->
-        let nextModel = { currentModel with Counter = Some { Value = counter.Value - 1 } }
-        nextModel, Cmd.none
-    | _, InitialCountLoaded initialCount->
-        let nextModel = { Counter = Some initialCount }
-        nextModel, Cmd.none
-    | _ -> currentModel, Cmd.none
+    match msg with
+    | ChangeLanguage l -> {currentModel with Language = Language.getMLString l}, Cmd.none
+    //| SignIn -> currentModel, Cmd.OfAsync.perform logIn () SignInResult
+    //| GetUser -> currentModel, Cmd.OfPromise.perform signIn () unpackResp
+    | GetUser -> currentModel, Cmd.OfAsync.either getUser () UserDetails (fun exn ->
+        printfn "Error getting user info: %A" exn 
+        UserDetails None)
+    | UserDetails user -> {currentModel with User = user}, Cmd.none
 
 
 let safeComponents =
     let components =
         span [ ]
            [ a [ Href "https://github.com/SAFE-Stack/SAFE-template" ]
-               [ str "SAFE  "
+               [ str "SAFE FOS "
                  str Version.template ]
              str ", "
              a [ Href "https://github.com/giraffe-fsharp/Giraffe" ] [ str "Giraffe" ]
@@ -87,20 +107,29 @@ let safeComponents =
           str " powered by: "
           components ]
 
-let show = function
-    | { Counter = Some counter } -> string counter.Value
-    | { Counter = None   } -> "Loading..."
+let showUser lString user = 
+    match user with
+    | Some user -> user.UserName
+    | None -> lString Language.Login
 
-let navBrand =
+let navbarItemRaw dispatch str msg =
+    Navbar.Item.a [ Navbar.Item.Option.Props [ OnClick(fun _ -> dispatch (msg)) ] ]
+        [ str ]
+
+let navBrand lStr user dispatch=
+    let navbarItem = fun s p -> (navbarItemRaw dispatch (str s) p)
     Navbar.navbar [ Navbar.Color IsWhite ]
         [ Container.container [ ]
             [ Navbar.Brand.div [ ]
                 [ Navbar.Item.a [ Navbar.Item.CustomClass "brand-text" ]
-                      [ str "SAFE Admin" ] ]
+                      [ str "BIM Admin" ] ]
               Navbar.menu [ ]
                   [ Navbar.Start.div [ ]
-                      [ Navbar.Item.a [ ]
-                            [ str "Home" ]
+                      [ 
+                        match user with
+                        | Some user -> navbarItem user.UserName GetUser
+                        | None -> navbarItem (lStr Login) GetUser
+
                         Navbar.Item.a [ ]
                             [ str "Orders" ]
                         Navbar.Item.a [ ]
@@ -205,16 +234,14 @@ let counter (model : Model) (dispatch : Msg -> unit) =
         [ Control.p [ Control.IsExpanded ]
             [ Input.text
                 [ Input.Disabled true
-                  Input.Value (show model) ] ]
+                  Input.Value "not implemented here" ] ]
           Control.p [ ]
             [ Button.a
-                [ Button.Color IsInfo
-                  Button.OnClick (fun _ -> dispatch Increment) ]
+                [ Button.Color IsInfo]
                 [ str "+" ] ]
           Control.p [ ]
             [ Button.a
-                [ Button.Color IsInfo
-                  Button.OnClick (fun _ -> dispatch Decrement) ]
+                [ Button.Color IsInfo]
                 [ str "-" ] ] ]
 
 let columns (model : Model) (dispatch : Msg -> unit) =
@@ -285,7 +312,7 @@ let columns (model : Model) (dispatch : Msg -> unit) =
 
 let view (model : Model) (dispatch : Msg -> unit) =
     div [ ]
-        [ navBrand
+        [ navBrand model.Language model.User dispatch
           Container.container [ ]
               [ Columns.columns [ ]
                   [ Column.column [ Column.Width (Screen.All, Column.Is3) ]

@@ -8,7 +8,9 @@
         <None Include="index.html" />
         <None Include="paket.references" />
         <None Include="style.scss" />
-        <Compile Include="..\Shared\Shared.fs" />
+        <Compile Include="../Shared/Validation.fs" />
+        <Compile Include="../Shared/Shared.fs" />
+        <Compile Include="../Shared/Language.fs" />
         <Compile Include="Version.fs" />
         <Compile Include="Client.fs" />
     </ItemGroup>

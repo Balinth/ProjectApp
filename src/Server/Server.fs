@@ -26,16 +26,39 @@ let port =
     "SERVER_PORT"
     |> tryGetEnv |> Option.map uint16 |> Option.defaultValue 8085us
 
-let counterApi = {
-    initialCounter = fun () -> async { return { Value = 42 } }
+
+let secureAPI (user : UserInfo option) signOut = {
+    logIn = fun () -> async {return user}
+    logOut = fun () -> async {
+        do! signOut()
+        return user 
+        }
+    getUserDetails = fun () ->
+        async {
+            return user
+        }
 }
 
-let webApp =
-    Remoting.createApi()
-    |> Remoting.withRouteBuilder Route.builder
-    |> Remoting.fromValue counterApi
-    |> Remoting.buildHttpHandler
 
+let securedAPI (ctx : HttpContext) =
+    let user = {UserName = ctx.User.Identity.Name; UserEmail = "email not implemented"; UserID = "userid not implemented" }
+    secureAPI (Some user) (fun () -> Async.AwaitTask(ctx.SignOutAsync()) )
+
+let authenticate : HttpHandler =
+    challenge AzureADDefaults.AuthenticationScheme
+    |> requiresAuthentication
+
+let securedApp =
+    authenticate >=> (
+        Remoting.createApi()
+        |> Remoting.withRouteBuilder Route.builder
+        |> Remoting.fromContext securedAPI
+        |> Remoting.buildHttpHandler )
+
+let webApp =
+    choose [
+        securedApp
+    ]
 
 let configureApp (context : WebHostBuilderContext) (app : IApplicationBuilder) =
     printfn "%s" context.HostingEnvironment.EnvironmentName
@@ -47,6 +70,7 @@ let configureApp (context : WebHostBuilderContext) (app : IApplicationBuilder) =
     app
        .UseHttpsRedirection()
        .UseHsts()
+       .UseCors()
        .UseDefaultFiles()
        .UseStaticFiles()
        .UseCookiePolicy()
