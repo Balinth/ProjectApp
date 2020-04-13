@@ -8,6 +8,7 @@ open Fake.Core
 #endif
 
 open System
+open System.IO
 
 open Fake.Core
 open Fake.DotNet
@@ -21,6 +22,8 @@ let serverPath = Path.getFullName "./src/Server"
 let clientPath = Path.getFullName "./src/Client"
 let clientDeployPath = Path.combine clientPath "deploy"
 let deployDir = Path.getFullName "./deploy"
+
+let dbPath = Path.getFullName "./db" // Note: you must place the sqlite3.exe in this path
 
 let release = ReleaseNotes.load "RELEASE_NOTES.md"
 
@@ -38,6 +41,8 @@ let platformTool tool winTool =
 let nodeTool = platformTool "node" "node.exe"
 let yarnTool = platformTool "yarn" "yarn.cmd"
 
+let sqliteTool = platformTool "sqlite3" (dbPath + "/sqlite3.exe")
+
 let runTool cmd args workingDir =
     let arguments = args |> String.split ' ' |> Arguments.OfArgs
     Command.RawCommand (cmd, arguments)
@@ -45,6 +50,16 @@ let runTool cmd args workingDir =
     |> CreateProcess.withWorkingDirectory workingDir
     |> CreateProcess.ensureExitCode
     |> Proc.run
+    |> ignore
+
+let runToolWithInput cmd args workingDir inputStream =
+    let arguments = args |> String.split ' ' |> Arguments.OfArgs
+    Command.RawCommand (cmd,arguments)
+    |> CreateProcess.fromCommand
+    |> CreateProcess.withWorkingDirectory workingDir
+    |> CreateProcess.ensureExitCode
+    |> CreateProcess.withStandardInput (CreatePipe inputStream)
+    |> Proc.start
     |> ignore
 
 let runDotNet cmd workingDir =
@@ -65,6 +80,17 @@ Target.create "Clean" (fun _ ->
     [ deployDir
       clientDeployPath ]
     |> Shell.cleanDirs
+)
+
+Target.create "DevDB" (fun _ ->
+    let input = ".read DevDatabase.sql" + Environment.NewLine
+    let streamRef = StreamRef.Empty
+    Fake.IO.Shell.copyFile dbPath (serverPath + "/DevDatabase.sql")
+    runToolWithInput sqliteTool "DevDB.db" __SOURCE_DIRECTORY__ streamRef
+    use writer = new StreamWriter(streamRef.Value)
+    writer.Write(input)
+    writer.Flush()
+    Trace.trace "Initialized DB"
 )
 
 Target.create "InstallClient" (fun _ ->
@@ -138,11 +164,6 @@ Target.create "Docker" (fun _ ->
     buildDocker dockerFullName
 )
 
-
-
-
-
-
 open Fake.Core.TargetOperators
 
 "Clean"
@@ -153,6 +174,7 @@ open Fake.Core.TargetOperators
 
 
 "Clean"
+    ==> "DevDB"
     ==> "InstallClient"
     ==> "Run"
 

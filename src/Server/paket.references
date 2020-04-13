@@ -4,3 +4,5 @@ Giraffe
 Fable.Remoting.Giraffe
 Microsoft.AspNetCore.Authentication.AzureAD.UI
 Microsoft.Extensions.Configuration.Json
+System.Data.SQLite
+SQLProvider

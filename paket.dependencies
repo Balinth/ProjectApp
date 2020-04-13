@@ -8,6 +8,8 @@ group Server
     nuget Fable.Remoting.Giraffe ~> 3
 nuget Microsoft.AspNetCore.Authentication.AzureAD.UI
 nuget Microsoft.Extensions.Configuration.Json
+nuget SQLProvider
+nuget System.Data.SQLite
 
 group Client
     source https://api.nuget.org/v3/index.json

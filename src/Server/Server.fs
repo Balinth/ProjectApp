@@ -1,6 +1,7 @@
 open System
 open System.IO
 open System.Threading.Tasks
+open System.Linq
 
 open Microsoft.AspNetCore
 open Microsoft.AspNetCore.Http
@@ -18,6 +19,9 @@ open Shared
 
 open Fable.Remoting.Server
 open Fable.Remoting.Giraffe
+open System.IdentityModel.Tokens.Jwt
+open System.Security.Claims
+open Microsoft.AspNetCore.Identity
 
 let tryGetEnv = System.Environment.GetEnvironmentVariable >> function null | "" -> None | x -> Some x
 
@@ -41,7 +45,13 @@ let secureAPI (user : UserInfo option) signOut = {
 
 
 let securedAPI (ctx : HttpContext) =
-    let user = {UserName = ctx.User.Identity.Name; UserEmail = "email not implemented"; UserID = "userid not implemented" }
+    let subClaimType = ClaimsIdentityOptions().UserIdClaimType
+    let sub = ctx.User.Claims.FirstOrDefault(fun c -> c.Type = subClaimType)
+    let subValue = if isNotNull sub then Some sub.Value else None
+    let user = {
+        UserName = ctx.User.Identity.Name; 
+        UserEmail = ctx.User.Claims |> Seq.map (fun c -> c.Type + "= " + c.Value + Environment.NewLine) |> Seq.fold (+) ""; 
+        UserID = "userid not implemented" }
     secureAPI (Some user) (fun () -> Async.AwaitTask(ctx.SignOutAsync()) )
 
 let authenticate : HttpHandler =
@@ -88,11 +98,15 @@ let configureServices (services : IServiceCollection) =
         )
         .Configure(AzureADDefaults.OpenIdScheme, fun (opt:OpenIdConnectOptions) ->
             opt.Authority <- opt.Authority + "/v2.0/"
+            opt.Scope.Add("profile")
+            opt.MaxAge <- Some (TimeSpan.FromSeconds 60.) |> Option.toNullable
             opt.TokenValidationParameters.ValidateIssuer <- false
         )
         .AddAuthentication(AzureADDefaults.AuthenticationScheme)
             .AddAzureAD(fun opt -> configuration.Bind("AzureAd", opt))
         |> ignore
+    
+
     services
         .AddSession()
         .AddGiraffe() |> ignore
@@ -108,9 +122,9 @@ WebHost
     .UseKestrel()
     .UseWebRoot(publicPath)
     //.UseContentRoot(publicPath) // commented out because this seems stupid, and caused the config provider to look for appsettings.json in the public path folder....
+    .ConfigureServices(configureServices)
     .Configure(Action<WebHostBuilderContext,IApplicationBuilder> configureApp)
     .ConfigureAppConfiguration(configureAppConfiguration)
-    .ConfigureServices(configureServices)
     .UseUrls("https://0.0.0.0:" + port.ToString() + "/")
     .Build()
     .Run()
