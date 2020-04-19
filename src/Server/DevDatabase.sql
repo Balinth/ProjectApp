@@ -1,18 +1,19 @@
 CREATE TABLE IF NOT EXISTS Project(
+    ProjectName text NOT NULL UNIQUE,
+    ProjectID int PRIMARY KEY,
     Code text NOT NULL UNIQUE,
-    Name text NOT NULL UNIQUE,
-    ID int PRIMARY KEY,
     StartDate int
 );
-CREATE TABLE IF NOT EXISTS Structure(
-    ID int PRIMARY KEY,
-    Name text NOT NULL UNIQUE,
+CREATE TABLE IF NOT EXISTS Phase(
+    PhaseID int PRIMARY KEY,
+    PhaseName text NOT NULL UNIQUE,
     Project_ID int,
     FOREIGN KEY (Project_ID)
-       REFERENCES Project (Project_ID) 
+       REFERENCES Project (ProjectID) 
 );
-CREAABLE IF NOT EXISTS User(
-    ID int PRIMARY KEY,
-    Name text NOT NULL UNIQUE,
+CREATE TABLE IF NOT EXISTS User(
+    UserID int PRIMARY KEY,
+    UserName text NOT NULL UNIQUE,
     PrimaryEmail text NOT NULL UNIQUE,
+    UserNameID text NOT NULL UNIQUE
 );

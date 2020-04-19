@@ -25,6 +25,12 @@ let deployDir = Path.getFullName "./deploy"
 
 let dbPath = Path.getFullName "./db" // Note: you must place the sqlite3.exe in this path
 
+// obtain secret for tls cert
+let appsettings = JObject.Parse(File.readAsString( serverPath + @"/appsettings.json"))
+let certPath = serverPath + (string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Path"] )
+let pwSecret = string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Password"]
+TraceSecrets.register "<SECRET>" pwSecret
+
 let release = ReleaseNotes.load "RELEASE_NOTES.md"
 
 let platformTool tool winTool =
@@ -62,6 +68,17 @@ let runToolWithInput cmd args workingDir inputStream =
     |> Proc.start
     |> ignore
 
+let runToolWithOutputFiltering cmd args workingDir = 
+    let arguments = args |> String.split ' ' |> Arguments.OfArgs
+    Command.RawCommand (cmd, arguments)
+    |> CreateProcess.fromCommand
+    |> CreateProcess.withWorkingDirectory workingDir
+    |> CreateProcess.ensureExitCode
+    |> CreateProcess.redirectOutput
+    |> CreateProcess.withOutputEventsNotNull Trace.trace Trace.traceError
+    |> Proc.run
+    |> ignore
+
 let runDotNet cmd workingDir =
     let result =
         DotNet.exec (DotNet.Options.withWorkingDirectory workingDir) cmd ""
@@ -86,9 +103,11 @@ Target.create "DevDB" (fun _ ->
     let input = ".read DevDatabase.sql" + Environment.NewLine
     let streamRef = StreamRef.Empty
     Fake.IO.Shell.copyFile dbPath (serverPath + "/DevDatabase.sql")
-    runToolWithInput sqliteTool "DevDB.db" __SOURCE_DIRECTORY__ streamRef
+    runToolWithInput sqliteTool "DevDatabase.db" dbPath streamRef
     use writer = new StreamWriter(streamRef.Value)
     writer.Write(input)
+    writer.Flush()
+    writer.Write(".exit")
     writer.Flush()
     Trace.trace "Initialized DB"
 )
@@ -116,11 +135,7 @@ Target.create "Run" (fun _ ->
         runDotNet "watch run" serverPath
     }
     let client = async {
-        // obtain secret for tls cert
-        let appsettings = JObject.Parse(File.readAsString( serverPath + @"/appsettings.json"))
-        let certPath = serverPath + (string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Path"] )
-        let pw = string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Password"]
-        runTool yarnTool ("webpack-dev-server" + " --https --pfx=" + certPath + " --pfx-passphrase=" + pw) __SOURCE_DIRECTORY__
+        runToolWithOutputFiltering yarnTool ("webpack-dev-server" + " --https --pfx=" + certPath + " --pfx-passphrase=" + pwSecret) __SOURCE_DIRECTORY__
     }
     let browser = async {
         do! Async.Sleep 5000
@@ -177,5 +192,9 @@ open Fake.Core.TargetOperators
     ==> "DevDB"
     ==> "InstallClient"
     ==> "Run"
+
+
+"Clean"
+    ==> "DevDB"
 
 Target.runOrDefaultWithArguments "Build"
