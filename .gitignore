@@ -19,3 +19,4 @@ deploy
 *.pfx
 src/Server/appsettings.json
 db/*
+.paket/load/*
