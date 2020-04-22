@@ -12,16 +12,19 @@ open Microsoft.AspNetCore.Authentication.AzureAD.UI
 open Microsoft.AspNetCore.Authentication.OpenIdConnect
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Configuration
-
-open FSharp.Control.Tasks.V2
-open Giraffe
-open Shared
-
-open Fable.Remoting.Server
-open Fable.Remoting.Giraffe
 open System.IdentityModel.Tokens.Jwt
 open System.Security.Claims
 open Microsoft.AspNetCore.Identity
+
+open FSharp.Control.Tasks.V2
+open Giraffe
+open Fable.Remoting.Server
+open Fable.Remoting.Giraffe
+
+open Shared
+open DatabaseAccess
+
+JwtSecurityTokenHandler.DefaultMapInboundClaims <- false
 
 let tryGetEnv = System.Environment.GetEnvironmentVariable >> function null | "" -> None | x -> Some x
 
@@ -31,7 +34,7 @@ let port =
     |> tryGetEnv |> Option.map uint16 |> Option.defaultValue 8085us
 
 
-let secureAPI (user : UserInfo option) signOut = {
+let secureAPI user signOut = {
     logIn = fun () -> async {return user}
     logOut = fun () -> async {
         do! signOut()
@@ -43,16 +46,38 @@ let secureAPI (user : UserInfo option) signOut = {
         }
 }
 
+let persistUser user =
+    getUserResult user.UserID
+    |> function
+    | Ok dbUser when dbUser.Count() = 1 -> ()
+    | _ -> insertUser user 
+        |> printfn "%A"
+
+let getClaim (ctx:HttpContext) claimType =
+    let claim = ctx.User.Claims.FirstOrDefault(fun c -> c.Type = claimType)
+    match claim with
+    | null -> NoSuchClaim claimType |> Error
+    | nonNullClaim ->
+        match nonNullClaim.Value with
+        | null -> ClaimHadNullValue claimType |> Error
+        | claimValue -> Ok claimValue
+
 
 let securedAPI (ctx : HttpContext) =
-    let subClaimType = ClaimsIdentityOptions().UserIdClaimType
-    let sub = ctx.User.Claims.FirstOrDefault(fun c -> c.Type = subClaimType)
-    let subValue = if isNotNull sub then Some sub.Value else None
-    let user = {
-        UserName = ctx.User.Identity.Name; 
-        UserEmail = ctx.User.Claims |> Seq.map (fun c -> c.Type + "= " + c.Value + Environment.NewLine) |> Seq.fold (+) ""; 
-        UserID = "userid not implemented" }
-    secureAPI (Some user) (fun () -> Async.AwaitTask(ctx.SignOutAsync()) )
+    let sub = getClaim ctx "sub"
+    let email = getClaim ctx "email"
+    let familyName = getClaim ctx "family_name"
+    let givenName = getClaim ctx "given_name"
+
+    let user =
+        match sub, email, familyName, givenName with
+        | Ok sub, Ok email, Ok familyName, Ok givenName ->
+            let user = {UserName = familyName + " " + givenName; UserEmail=email; UserID=sub}
+            persistUser user
+            Ok user
+        | _ -> [sub;email;familyName;givenName] |> List.choose (function | Error err -> Some err | _ -> None) |> Error
+        
+    secureAPI (user) (fun () -> Async.AwaitTask(ctx.SignOutAsync()) )
 
 let authenticate : HttpHandler =
     challenge AzureADDefaults.AuthenticationScheme

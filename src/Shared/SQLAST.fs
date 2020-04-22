@@ -46,6 +46,9 @@ type Expression =
 type ErrorMsg =
     | SyntaxError
     | OperatorMustHaveArguments of BooleanOperator
+    | InsertMustHaveColumns
+    | InsertMustTargetOneTable of string list
+    | InsertMustContainDistinctColumns of string list
 
 type Parametrization = {
     ParamName : string * int
@@ -66,13 +69,6 @@ let paramStr = "Param"
 
 let parametrizeData ctx data =
     {ParamName=(paramStr,ctx());ParamValue=data}
-
-//let stringizeSQLData data =
-//    match data with
-//    | String str -> "\"" + str + "\""
-//    | Int int -> string int
-//    | Float float -> string float
-
 
 let stringizeRelationOperator op =
     match op with
@@ -142,8 +138,7 @@ type Query = {
     Condition : Expression option
 }
 
-
-let stringizeSQL query =
+let stringizeSQLQuery query =
     let ctx = ctxFactory()
     let columns = query.Columns |> List.map (fun c -> c.Table + "." + c.Name)
     let select = "SELECT " + String.Join( ", ", columns) + " FROM " + query.Table
@@ -153,6 +148,53 @@ let stringizeSQL query =
         >>= ((fun a -> "WHERE " + fst a, snd a) >> Ok)
     | None -> Ok ("", [])
     >>= (fun where -> ((select + Environment.NewLine + fst where), snd where) |> Ok)
+
+type InsertValue = {
+    Column : Column
+    Value : Data
+}
+
+type InsertStatement = {
+    Columns : InsertValue list
+}
+
+let getInsertTable (statement : InsertStatement) =
+    let tables = statement.Columns |> List.map (fun c -> c.Column.Table) |> List.distinct
+    match tables with
+    | [] -> Error [InsertMustHaveColumns]
+    | [table] -> Ok table
+    | list -> Error [InsertMustTargetOneTable list]
+
+let ensureDistinctColumns (statement : InsertStatement) =
+    let distinctCols = List.distinctBy (fun c -> c.Column.Name) statement.Columns
+    match distinctCols with
+    | [] -> Error InsertMustHaveColumns
+    | list when list = statement.Columns -> Ok list
+    | _ -> InsertMustContainDistinctColumns (statement.Columns |> List.map (fun c -> c.Column.Name)) |> Error
+
+let createInsertSQL statement table =
+    statement
+    |> ensureDistinctColumns
+    |> function
+        | Ok cols ->
+            let columns =
+                cols
+                |> List.map (fun c -> c.Column.Name)
+                |> List.reduce (fun sum c -> sum + "," + c)
+            let colParams =
+                cols
+                |> List.map (fun c -> "@" + c.Column.Name)
+                |> List.reduce (fun sum c -> sum + "," + c)
+            let sqlStr = "INSERT INTO " + table + "(" + columns + ") VALUES (" + colParams + ")"
+            Ok (sqlStr, cols)
+        | Error err -> Error [err]
+
+
+let stringizeSQLInsert (statement : InsertStatement) =
+    getInsertTable statement
+    >>= createInsertSQL statement
+
+
 
 (*
 let testCols = [

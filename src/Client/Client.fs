@@ -65,6 +65,12 @@ let signIn =
 let unpackResp (resp : Fetch.Types.Response) =
     Some {UserName = string resp.Ok; UserID = ""; UserEmail = ""} |> UserDetails
     
+let userDetailResult userDetails =
+    match userDetails with
+    | Ok user -> Some user |> UserDetails
+    | Error err ->
+        printfn "%A" err
+        UserDetails None
 
 // The update function computes the next state of the application based on the current state and the incoming events/messages
 // It can also run side-effects (encoded as commands) like calling the server via Http.
@@ -74,7 +80,7 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     | ChangeLanguage l -> {currentModel with Language = Language.getMLString l}, Cmd.none
     //| SignIn -> currentModel, Cmd.OfAsync.perform logIn () SignInResult
     //| GetUser -> currentModel, Cmd.OfPromise.perform signIn () unpackResp
-    | GetUser -> currentModel, Cmd.OfAsync.either getUser () UserDetails (fun exn ->
+    | GetUser -> currentModel, Cmd.OfAsync.either getUser () userDetailResult (fun exn ->
         printfn "Error getting user info: %A" exn 
         UserDetails None)
     | UserDetails user -> {currentModel with User = user}, Cmd.none
