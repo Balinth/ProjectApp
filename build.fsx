@@ -71,14 +71,13 @@ let runToolWithInput cmd args workingDir inputStream =
     |> ignore
 
 let runToolWithOutputFiltering cmd args workingDir = 
-    printfn "%A" envTest
     let arguments = args |> String.split ' ' |> Arguments.OfArgs
     Command.RawCommand (cmd, arguments)
     |> CreateProcess.fromCommand
     |> CreateProcess.withWorkingDirectory workingDir
     |> CreateProcess.ensureExitCode
-    //|> CreateProcess.redirectOutput
-    //|> CreateProcess.withOutputEventsNotNull Trace.trace Trace.traceError
+    |> CreateProcess.redirectOutput
+    |> CreateProcess.withOutputEventsNotNull Trace.trace Trace.traceError
     |> Proc.run
     |> ignore
 
