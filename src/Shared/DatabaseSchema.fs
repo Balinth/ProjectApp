@@ -1,5 +1,4 @@
 module DatabaseSchema
-open System
 
 type UserTable =
     | UserName
@@ -13,12 +12,11 @@ type ProjectTable =
     | StartDate
     | Code
 
-type ProjectAppDB =
+type ProjectAppColumn =
     | UserTable of UserTable
     | ProjectTable of ProjectTable
 
-
-let getColumnName (col : ProjectAppDB) : string =
+let getColumnName (col : ProjectAppColumn) : string =
     match col with
     | UserTable u ->
         match u with
@@ -33,26 +31,7 @@ let getColumnName (col : ProjectAppDB) : string =
         | StartDate -> "StartDate"
         | Code -> "Code"
 
-let getColumnType (col : ProjectAppDB) : Type =
-    match col with
-    | UserTable u ->
-        match u with
-        | UserName -> typeof<string>
-        | PrimaryEmail -> typeof<string>
-        | UserNameID -> typeof<string>
-        | UserID -> typeof<int>
-    | ProjectTable p ->
-        match p with
-        | ProjectName -> typeof<string>
-        | ProjectID -> typeof<string>
-        | StartDate -> typeof<int>
-        | Code -> typeof<int>
-
-let getColumnTableName (col : ProjectAppDB) : string =
+let getColumnTableName (col : ProjectAppColumn) : string =
     match col with
     | UserTable U -> "User"
     | ProjectTable P -> "Project"
-
-let testCol : ProjectAppDB = UserName |> UserTable
-
-let testColName = getColumnName testCol
