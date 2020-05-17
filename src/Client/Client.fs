@@ -62,9 +62,6 @@ let signIn =
         ]
     res
 
-let unpackResp (resp : Fetch.Types.Response) =
-    Some {UserName = string resp.Ok; UserID = ""; UserEmail = ""} |> UserDetails
-    
 let userDetailResult userDetails =
     match userDetails with
     | Ok user -> Some user |> UserDetails
@@ -78,8 +75,6 @@ let userDetailResult userDetails =
 let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     match msg with
     | ChangeLanguage l -> {currentModel with Language = Language.getMLString l}, Cmd.none
-    //| SignIn -> currentModel, Cmd.OfAsync.perform logIn () SignInResult
-    //| GetUser -> currentModel, Cmd.OfPromise.perform signIn () unpackResp
     | GetUser -> currentModel, Cmd.OfAsync.either getUser () userDetailResult (fun exn ->
         printfn "Error getting user info: %A" exn 
         UserDetails None)

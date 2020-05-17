@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS Phase(
 CREATE TABLE IF NOT EXISTS User(
     UserID int PRIMARY KEY,
     UserName text NOT NULL UNIQUE,
+    GivenName text NOT NULL,
+    FamilyName text NOT NULL,
     PrimaryEmail text NOT NULL UNIQUE,
     UserNameID text NOT NULL UNIQUE
 );

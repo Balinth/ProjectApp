@@ -1,16 +1,31 @@
 namespace Shared
 
+open System
+
+open DatabaseSchema
+
 type Counter = { Value : int }
 
 type UserInfo = {
     UserName : string
-    UserID : string
+    UserNameID : string
+    GivenName : string
+    FamilyName : string
     UserEmail : string
 }
 
 type ClaimError =
     | NoSuchClaim of string
     | ClaimHadNullValue of string
+
+type DBError<'c> =
+    | DBException of Exception
+    | SQLError of SQLAST.ErrorMsg<'c>
+    | InsertFailed
+
+type APIError =
+    | ClaimError of ClaimError
+    | DBError of DBError<ProjectAppColumn>
 
 module Route =
     /// Defines how routes are generated on server and mapped from client
@@ -20,8 +35,8 @@ module Route =
 /// A type that specifies the communication protocol between client and server
 /// to learn more, read the docs at https://zaid-ajaj.github.io/Fable.Remoting/src/basics.html
 type ISecureAPI = {
-    logIn : unit -> Async<Result<UserInfo,ClaimError list>>
-    logOut : unit -> Async<Result<UserInfo,ClaimError list>>
-    getUserDetails : unit -> Async<Result<UserInfo,ClaimError list>>  
+    logIn : unit -> Async<Result<UserInfo,APIError list>>
+    logOut : unit -> Async<Result<UserInfo,APIError list>>
+    getUserDetails : unit -> Async<Result<UserInfo,APIError list>>  
 }
 

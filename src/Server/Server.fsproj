@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="paket.references" />
+    <Compile Include="../Shared/ResultExtensions.fs" />
     <Compile Include="../Shared/Validation.fs" />
     <Compile Include="../Shared/DatabaseSchema.fs" />
     <Compile Include="../Shared/SQLAST.fs" />

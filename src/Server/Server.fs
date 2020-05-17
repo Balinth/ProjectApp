@@ -23,6 +23,7 @@ open Fable.Remoting.Giraffe
 
 open Shared
 open DatabaseAccess
+open ResultExtensions
 
 JwtSecurityTokenHandler.DefaultMapInboundClaims <- false
 
@@ -46,38 +47,48 @@ let secureAPI user signOut = {
         }
 }
 
-let persistUser user =
-    getUserResult user.UserID
+let persistUser (user : UserInfo) =
+    getUserResult user.UserNameID
     |> function
-    | Ok dbUser when dbUser.Count() = 1 -> ()
-    | _ -> insertUser user 
-        |> printfn "%A"
+    | Ok dbUser when dbUser.Count() = 1 ->
+        let dbUser = dbUser.First()
+        Ok {UserInfo.UserName=dbUser.UserName; UserNameID=dbUser.UserNameID; UserEmail=dbUser.PrimaryEmail; GivenName=dbUser.GivenName; FamilyName=dbUser.FamilyName}
+    | _ ->
+        insertUser user 
+        >>= (fun i -> if i = 1 then Ok user else Error [InsertFailed])
 
 let getClaim (ctx:HttpContext) claimType =
     let claim = ctx.User.Claims.FirstOrDefault(fun c -> c.Type = claimType)
     match claim with
-    | null -> NoSuchClaim claimType |> Error
+    | null -> [NoSuchClaim claimType] |> Error
     | nonNullClaim ->
         match nonNullClaim.Value with
-        | null -> ClaimHadNullValue claimType |> Error
+        | null -> [ClaimHadNullValue claimType] |> Error
         | claimValue -> Ok claimValue
-
 
 let securedAPI (ctx : HttpContext) =
     let sub = getClaim ctx "sub"
     let email = getClaim ctx "email"
     let familyName = getClaim ctx "family_name"
     let givenName = getClaim ctx "given_name"
+    let userName = getClaim ctx "unique_name"
+
+    let create userName sub email familyName givenName = {UserName=userName; GivenName=givenName; FamilyName=familyName; UserEmail=email; UserNameID=sub}
 
     let user =
-        match sub, email, familyName, givenName with
-        | Ok sub, Ok email, Ok familyName, Ok givenName ->
-            let user = {UserName = familyName + " " + givenName; UserEmail=email; UserID=sub}
-            persistUser user
-            Ok user
-        | _ -> [sub;email;familyName;givenName] |> List.choose (function | Error err -> Some err | _ -> None) |> Error
-        
-    secureAPI (user) (fun () -> Async.AwaitTask(ctx.SignOutAsync()) )
+        create
+        <!> userName
+        <*> sub
+        <*> email
+        <*> familyName
+        <*> givenName
+
+    let user2 =
+            user
+            |> Result.mapError (List.map ClaimError)
+            >>= (persistUser >> Result.mapError (List.map DBError))
+
+    secureAPI (user2) (fun () -> Async.AwaitTask(ctx.SignOutAsync()) )
 
 let authenticate : HttpHandler =
     challenge AzureADDefaults.AuthenticationScheme

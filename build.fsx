@@ -24,7 +24,7 @@ let clientDeployPath = Path.combine clientPath "deploy"
 let deployDir = Path.getFullName "./deploy"
 
 let dbPath = Path.getFullName "./db" // Note: you must place the sqlite3.exe in this path
-
+let devDBFile = "DevDatabase.db"
 // obtain secret for tls cert
 let appsettings = JObject.Parse(File.readAsString( serverPath + @"/appsettings.json"))
 let certPath = serverPath + (string appsettings.["ASPNETCORE_Kestrel__Certificates__Default__Path"] )
@@ -101,17 +101,24 @@ Target.create "Clean" (fun _ ->
     |> Shell.cleanDirs
 )
 
-Target.create "DevDB" (fun _ ->
+let devDBFun = (fun _ ->
     let input = ".read DevDatabase.sql" + Environment.NewLine
     let streamRef = StreamRef.Empty
     Fake.IO.Shell.copyFile dbPath (serverPath + "/DevDatabase.sql")
-    runToolWithInput sqliteTool "DevDatabase.db" dbPath streamRef
+    runToolWithInput sqliteTool devDBFile dbPath streamRef
     use writer = new StreamWriter(streamRef.Value)
     writer.Write(input)
     writer.Flush()
     writer.Write(".exit")
     writer.Flush()
     Trace.trace "Initialized DB"
+)
+
+Target.create "DevDB" devDBFun
+Target.create "ResetDB" devDBFun
+
+Target.create "DeleteDB" (fun _ ->
+    File.Delete(Path.Combine(dbPath, devDBFile))
 )
 
 Target.create "InstallClient" (fun _ ->
@@ -195,8 +202,10 @@ open Fake.Core.TargetOperators
     ==> "InstallClient"
     ==> "Run"
 
+"Clean" ==> "DeleteDB" ==> "ResetDB"
 
-"Clean"
-    ==> "DevDB"
+"DeleteDB" ?=> "DevDB"
+
+"Clean" ==> "DevDB"
 
 Target.runOrDefaultWithArguments "Build"

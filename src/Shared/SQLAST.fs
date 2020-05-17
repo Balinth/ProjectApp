@@ -40,16 +40,25 @@ type Expression<'c> =
     | RelationExpr of RelationOperator * FieldExpression<'c> * FieldExpression<'c>
     | Not of Expression<'c>
 
-type ErrorMsg =
+type ErrorMsg<'c> =
     | QueryHasNoColumns
     | SyntaxError
     | OperatorMustHaveArguments of BooleanOperator
     | InsertMustHaveColumns
     | InsertMustTargetOneTable of string list
-    | InsertMustContainDistinctColumns of string list
+    | InsertMustContainDistinctColumns of 'c list
 
  
-type Query<'c> = {
+type QueryStatement<'c> = {
     Columns : Column<'c> list
     Condition : Expression<'c> option
+}
+
+type InsertValue<'c> = {
+    Column : Column<'c>
+    Value : Data
+}
+
+type InsertStatement<'c> = {
+    Columns : InsertValue<'c> list
 }

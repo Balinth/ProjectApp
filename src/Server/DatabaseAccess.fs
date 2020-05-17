@@ -1,9 +1,9 @@
 module DatabaseAccess
 
-open Shared
 
 open System
 open System.IO
+
 #if INTERACTIVE
 let e_sqliteDir = @"c:\Users\Harmatb\.nuget\packages\sqlitepclraw.lib.e_sqlite3\2.0.2\runtimes\win10-x86\nativeassets\uap10.0\"
 Environment.SetEnvironmentVariable("Path",
@@ -12,15 +12,15 @@ Environment.SetEnvironmentVariable("Path",
 #load @"../Shared/SQLAST.fs"
 Directory.SetCurrentDirectory(__SOURCE_DIRECTORY__)
 #endif
+
 open System.Data
 open System.Data.SQLite
 open Dapper
+open Shared
+open ResultExtensions
 open SQLAST
-open System.Collections.Generic
-
-type DBErrorMsg =
-    | Exception of Exception
-    | SQLError of SQLAST.ErrorMsg
+open SQLGenerator
+open DatabaseSchema
 
 let connectionString = 
     SQLiteConnectionStringBuilder(
@@ -81,39 +81,31 @@ let parametersBuilder parameters : DynamicParameters =
     |> ignore
     dynamicParameters
 
-let deconstructInsertValue parameter =
+let deconstructInsertValue db parameter =
     let parameterType, parameterValue = deconstructDbData parameter.Value
     (
-        "@" + parameter.Column.Name,
+        "@" + (db.ColumnName parameter.Column.Col),
         parameterValue,
         Nullable parameterType
     )
 
 
-let insertParameterBuilder insertValues : DynamicParameters =
+let insertParameterBuilder db insertValues : DynamicParameters =
     let dynamicParameters = DynamicParameters()
     insertValues
     |> List.map (fun parameter ->
-        let pName,pVal,pType = deconstructInsertValue parameter
+        let pName,pVal,pType = deconstructInsertValue db parameter
         dynamicParameters.Add(pName, pVal, pType) )
     |> ignore
     dynamicParameters
-
-
-
-let userColumns = 
-    [
-        ("UserName", {Table="User";Name="UserName";DataType=DBString})
-        ("UserNameID",{Table="User";Name="UserNameID";DataType=DBString})
-        ("PrimaryEmail",{Table="User";Name="PrimaryEmail";DataType=DBString})
-    ]
-    |> Map.ofSeq
 
 [<CLIMutable>]
 type DbUser ={
     UserName : string
     UserNameID : string
     PrimaryEmail : string
+    GivenName : string
+    FamilyName : string
 }
 
 let executeQuery (sqlStr, parameters) =
@@ -122,7 +114,7 @@ let executeQuery (sqlStr, parameters) =
         let result =conn.Query(sqlStr, parametersBuilder parameters)
         Ok result
     with
-    | ex -> [Exception ex] |> Error
+    | ex -> [DBException ex] |> Error
     
 let executeQueryTyped<'T> (sqlStr, parameters) =
     try
@@ -130,32 +122,45 @@ let executeQueryTyped<'T> (sqlStr, parameters) =
         let result =conn.Query<'T>(sqlStr, parametersBuilder parameters)
         Ok result
     with
-    | ex -> [Exception ex] |> Error
+    | ex -> [DBException ex] |> Error
 
-let getUserResult userID =
-    let expr = RelationExpr (Equals ,Column userColumns.["UserNameID"],userID |> String |> Value)
-    let query = {Table="User";Columns=userColumns |> List.ofSeq |> List.map (fun i -> i.Value);Condition = Some expr}
-    let sqlStr = stringizeSQLQuery query
+let getUserResult userNameID =
+    let expr = RelationExpr (
+                Equals,
+                UserNameID |> UserTable |> ProjectAppColumns |> Column,
+                userNameID |> String |> Value
+                )
+    let queryColumns = [
+        ProjectAppColumns <| UserTable UserName
+        ProjectAppColumns <| UserTable UserNameID
+        ProjectAppColumns <| UserTable PrimaryEmail
+        ProjectAppColumns <| UserTable GivenName
+        ProjectAppColumns <| UserTable FamilyName
+    ]
+    let query = {Columns=queryColumns; Condition = Some expr}
+    let sqlStr = stringizeSQLQuery projectAppDB query
     sqlStr
     |> Result.mapError (fun eList -> List.map SQLError eList)
     >>= executeQueryTyped<DbUser>
 
-let executeInsert (sqlStr, parameters) =
+let executeInsert db (sqlStr, parameters) =
     try
         use conn = new SQLiteConnection(connectionString)
-        let result = conn.Execute(sqlStr, insertParameterBuilder parameters)
+        let result = conn.Execute(sqlStr, insertParameterBuilder db parameters)
         Ok result
     with
-    | ex -> [Exception ex] |> Error
+    | ex -> [DBException ex] |> Error
 
 let insertUser (user:UserInfo) =
     let insertValues = [
-        {Column = userColumns.["UserName"]; Value=user.UserName |> String}
-        {Column = userColumns.["UserNameID"]; Value=user.UserID |> String}
-        {Column = userColumns.["PrimaryEmail"]; Value=user.UserEmail |> String}
+        {Column = ProjectAppColumns <| UserTable UserName; Value=user.UserName |> String}
+        {Column = ProjectAppColumns <| UserTable UserNameID; Value=user.UserNameID |> String}
+        {Column = ProjectAppColumns <| UserTable PrimaryEmail; Value=user.UserEmail |> String}
+        {Column = ProjectAppColumns <| UserTable GivenName; Value=user.GivenName |> String}
+        {Column = ProjectAppColumns <| UserTable FamilyName; Value=user.FamilyName |> String}
     ]
     let insertStatement = {Columns = insertValues}
-    let sqlString = stringizeSQLInsert insertStatement
+    let sqlString = stringizeSQLInsert projectAppDB insertStatement
     sqlString
     |> Result.mapError (fun eList -> List.map SQLError eList)
-    >>= executeInsert
+    >>= executeInsert projectAppDB

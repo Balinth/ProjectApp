@@ -1,7 +1,5 @@
 module Validation
 
-let (>>=) x y = Result.bind y x
-
 let plus addSuccess addFailure switch1 switch2 x = 
     match (switch1 x),(switch2 x) with
     | Ok s1,Ok s2 -> Ok (addSuccess s1 s2)
@@ -12,6 +10,7 @@ let (&&&) a b =
     let addSuccess r1 r2 = r1
     let addFailure r1 r2 = List.append r1 r2
     plus addSuccess addFailure a b
+
 type ValidationError =
     | NoWhitespace
     | NotEmpty

@@ -3,6 +3,8 @@ module DatabaseSchema
 type UserTable =
     | UserName
     | UserID
+    | GivenName
+    | FamilyName
     | PrimaryEmail
     | UserNameID
 
@@ -21,9 +23,11 @@ let getColumnName (col : ProjectAppColumn) : string =
     | UserTable u ->
         match u with
         | UserName -> "UserName"
-        | PrimaryEmail -> "UserEmail"
+        | PrimaryEmail -> "PrimaryEmail"
         | UserNameID -> "UserNameID"
         | UserID -> "UserID"
+        | GivenName -> "GivenName"
+        | FamilyName -> "FamilyName"
     | ProjectTable p ->
         match p with
         | ProjectName -> "ProjectName"
@@ -33,5 +37,5 @@ let getColumnName (col : ProjectAppColumn) : string =
 
 let getColumnTableName (col : ProjectAppColumn) : string =
     match col with
-    | UserTable U -> "User"
-    | ProjectTable P -> "Project"
+    | UserTable _ -> "User"
+    | ProjectTable _ -> "Project"
