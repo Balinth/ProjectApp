@@ -8,10 +8,13 @@ open Fable.React
 open Fable.React.Props
 open Fulma
 open Thoth.Json
+open Fable.Core.JsInterop
+open Fable.Remoting.Client
 
+open PrimeReact.Column
+open PrimeReact.DataTable
 open Shared
 open Language
-open Fable.Remoting.Client
 
 // The model holds data that you want to keep track of while the application is running
 // in this case, we are keeping track of a counter
@@ -20,6 +23,7 @@ open Fable.Remoting.Client
 type Model = { 
     Language : Language.LStr -> string
     User : UserInfo option
+    Table : TableComponent.Model
 }
 
 // The Msg type defines what events/actions can occur while the application is running
@@ -28,6 +32,7 @@ type Msg =
     | ChangeLanguage of Language
     | GetUser
     | UserDetails of UserInfo option
+    | TableMsg of TableComponent.Msg
 
 module Server =
 
@@ -43,11 +48,12 @@ module Server =
 let logIn = Server.api.logIn
 let logOut = Server.api.logOut
 let getUser = Server.api.getUserDetails
+let getTable = Server.api.getTable
 
 // defines the initial state and initial command (= side-effect) of the application
 let init () : Model * Cmd<Msg> =
-    let initialModel = { Language = getMLString English; User = None }
-    initialModel, Cmd.ofMsg GetUser
+    let initialModel = { Language = getMLString English; User = None; Table = {Table=None}}
+    initialModel, Cmd.batch [Cmd.ofMsg GetUser; Cmd.OfAsync.perform getTable () TableComponent.Msg.TableGot |> Cmd.map TableMsg]
 
 
 let signIn =
@@ -79,6 +85,46 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
         printfn "Error getting user info: %A" exn 
         UserDetails None)
     | UserDetails user -> {currentModel with User = user}, Cmd.none
+    | TableMsg msg ->
+        let compUpdate = TableComponent.update msg currentModel.Table
+        // for testing only
+        let err = sprintf "TableMsg: %A" msg
+        Fable.Core.JS.console.error err
+
+        {currentModel with Table = fst compUpdate }, snd compUpdate |> Cmd.map TableMsg
+
+let tableDataFromDynTable (dynTable : DynamicTable._T) =
+    dynTable.Rows 
+    |> List.map (fun row ->
+        List.map2 (fun data header -> 
+            header ==> 
+                match data with
+                | DynamicTable.Data.Int int -> string int
+                | DynamicTable.Data.String str -> str
+                | DynamicTable.Data.Float float -> string float) row.Data dynTable.Header
+        |> createObj)
+    |> ResizeArray
+
+
+let tableHeader (dynTable : DynamicTable._T) =
+    let fields = List.map ColProps.Field dynTable.Header
+    let headers = List.map ColProps.Header dynTable.Header
+    List.map2 (fun field head -> PrimeReact.Column.ColBuilder [field; head; ColProps.Sortable true ]) fields headers
+    |> Seq.ofList
+
+let tableView (model : Model) dispatch =
+    match model.Table.Table with
+    | Some table ->
+        let data = tableDataFromDynTable table
+        Box.box' [] [
+            DataTableBuilder [
+                DataTableProps.Header (Some ["Table View test"])
+                DataTableProps.Value (data)
+                ] 
+                (tableHeader table)
+        ]
+    | None ->
+        div [ ] [str "No table..."]
 
 
 let safeComponents =
@@ -322,7 +368,9 @@ let view (model : Model) (dispatch : Msg -> unit) =
                       [ breadcrump
                         hero
                         info
-                        columns model dispatch ] ] ] ]
+                        tableView model dispatch
+                        columns model dispatch
+                        ] ] ] ]
 
 #if DEBUG
 open Elmish.Debug

@@ -45,6 +45,9 @@ let secureAPI user signOut = {
         async {
             return user
         }
+    getTable = fun () -> async {
+        return DynamicTable.createTable ["a"; "b"] [{Data= [DynamicTable.Data.String "1"; DynamicTable.Data.String "2"]}]
+    }
 }
 
 let persistUser (user : UserInfo) =

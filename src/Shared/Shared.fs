@@ -3,6 +3,7 @@ namespace Shared
 open System
 
 open DatabaseSchema
+open DynamicTable
 
 type Counter = { Value : int }
 
@@ -37,6 +38,7 @@ module Route =
 type ISecureAPI = {
     logIn : unit -> Async<Result<UserInfo,APIError list>>
     logOut : unit -> Async<Result<UserInfo,APIError list>>
-    getUserDetails : unit -> Async<Result<UserInfo,APIError list>>  
+    getUserDetails : unit -> Async<Result<UserInfo,APIError list>>
+    getTable : unit -> Async<DynamicTable._T option>
 }
 
