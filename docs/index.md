@@ -8,9 +8,15 @@ I hope to share and record my thoughts and ideas, both the pre-existing ones tha
 Where you can read all about the motivation behind this webapp in general.
 ## 2. [SAFE Stack](safe_stack.md)
 A quick overview of the stack used and it's main promises.
-## 3. F# - TODO
-Overview of the language, what makes it noteworthy and a good fit for this project in my eyes.
-## 4. SQL AST: the core idea - TODO
+## 3. [About F#](fsharp.md)
+Overview of the language from my (C# dev) perspective, what makes it noteworthy and a good fit for this project.
+## 4. [Sum types](sum_types.md)
+Extra thoughts on the one killer feature of the functional paradigm, that I miss every day when working in non-functional languages.
+## 4. [Parser combinators](parser_lib.md)
+Notes on integrating Scott Wlaschin's simple parser combinator implementation into the project.
+## 5. [SQL AST: the core idea](sql_ast.md)
 A rundown of my core idea for the domain model of the webapp, and how can it be implemented with the tools a functional programming language provides.
-## 5. Shared web API definition - TODO
+## 6. [SQL AST: parsing](sql_ast_parse.md)
+Notes about parsing this AST with parser combinators, and unparsing it into sql command strings to drive our database.
+## 7. Shared web API definition - TODO
 How does code sharing work, and how it leads to frictionless and less error prone communication between front- and back-end.
