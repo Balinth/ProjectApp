@@ -14,7 +14,8 @@ Of course, as the author notes, the combinator library is not mean to be product
 The changes encompassed by my initial adaptation are encompassed in the following [commit](https://github.com/Balinth/ProjectApp/commit/9b065202d9a7a4b8a7a71d43858e3d8c0f5d9849#diff-4c35d28a383bad3443b19b98bc39243210c73de215e1977a50449002568ecf4d). The main changes are:
 * Polish to make the combinators more production ready, like handling overflow while parsing numbers, or refactoring recursive functions to be tail recursive / use loops to avoid potential stack overflows.
 * Parametrized parser label and parser errors, so I can use project specific types instead of hardcoded strings. This is especially important because I want to use and expose the parser functionality in the multi language UI, and was one of the reasons behind rolling "my own" parser combinator library.
-### Refactoring to tail-recursive functions:
+
+## Refactoring to tail-recursive functions:
 One of the changes I had to make, was to the `parseZeroOrMore` helper function of the `many` combinator. The problem with the original implementation, is that it is defined as a recursive function, that effectively uses stack space linearly with the number of successful parsings. Now of course, as recusrive functions are nothing new, and most languages including F# has the so called tail call optimization, where if the functions last expression is the recursive call, then the compiled code will use constant stack space for the given function.
 
 For me, it is not always obvious how I should go about redefining a recursive function to be tail recursive. What I found to help in these cases, is to first refactor the function to a more imperative style which is familiar (and note that in F# you can stop here, because F# is functional _first_ but has all the tools for you to fall back to imperative style where it is just more natural) and then, It just clicked how I should refactor this imperative version into a tail recursive one. See the listing below with the three progressive variants.
@@ -59,7 +60,8 @@ let rec parseZeroOrMoreTailRecursed values parser input =
     | Ok (newValue, remainingInput) ->
         parseZeroOrMoreTailRecursed (newValue::values) parser remainingInput
 {% endhighlight %}
-### General notes on refactoring in a functional language
+
+## General notes on refactoring in a functional language
 The diff of the referenced commit seems daunting, but this is something that I found F# excels in (and I suspect the case is the same in any language that is more functional oriented like Scala, Rust and obviously, Haskell). 
 
 The strong, algebraic type system, with the automatically generalizing type inference and default immutability combined, makes refactoring and extending existing code much more straight forward, with less hidden surprises all around. It is hard to convey in words the effect these combined make. But my experience with extending the entire parsing solution with parametrized labels was that I spent very little time wondering if I unwittingly broke something that will only rear its head at runtime. After changing the most basic functions to the new form, two things happen:
