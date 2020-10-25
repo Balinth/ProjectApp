@@ -15,7 +15,7 @@ type Column<'c> = {
     Type : DBType
 }
 
-type RelationOperator =
+type RelationOp =
     | Equals
     | Greater
     | GreaterOrEquals
@@ -23,27 +23,35 @@ type RelationOperator =
     | SmallerOrEquals
     | NotEquals
 
-type BooleanOperator =
+type BinaryBooleanOp =
     | And
     | Or
 
-type Operator =
-    | BooleanOperator of BooleanOperator
-    | RelationOperator of RelationOperator
+type BinaryNumericOp =
+    | Add
+    | Sub
+    | Mul
+    | Div
 
-type FieldExpression<'c> =
+type UnaryBinaryOperator = | Not
+
+type FieldExpr<'c> =
     | Value of Data
     | Column of Column<'c>
+    | BracedFieldExpr of FieldExpr<'c>
+    | BinaryFieldExpr of FieldExpr<'c> * BinaryNumericOp * FieldExpr<'c>
 
-type Expression<'c> =
-    | ListExpr of BooleanOperator * Expression<'c> list
-    | RelationExpr of RelationOperator * FieldExpression<'c> * FieldExpression<'c>
-    | Not of Expression<'c>
+type BoolExpr<'c> =
+    | BinaryBoolExpr of BoolExpr<'c> * BinaryBooleanOp * BoolExpr<'c>
+    | RelationExpr of FieldExpr<'c> * RelationOp * FieldExpr<'c>
+    | Not of BoolExpr<'c>
+    | BoolLiteral of bool
+    | BracedBoolExpr of BoolExpr<'c>
 
 type ErrorMsg<'c> =
     | QueryHasNoColumns
     | SyntaxError
-    | OperatorMustHaveArguments of BooleanOperator
+    | OperatorMustHaveArguments of BinaryBooleanOp
     | InsertMustHaveColumns
     | InsertMustTargetOneTable of string list
     | InsertMustContainDistinctColumns of 'c list
@@ -51,7 +59,7 @@ type ErrorMsg<'c> =
  
 type QueryStatement<'c> = {
     Columns : Column<'c> list
-    Condition : Expression<'c> option
+    Condition : BoolExpr<'c> option
 }
 
 type InsertValue<'c> = {

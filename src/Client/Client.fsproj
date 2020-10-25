@@ -6,10 +6,12 @@
     <None Include="index.html" />
     <None Include="paket.references" />
     <None Include="style.scss" />
+    <Compile Include="../Shared/ParserCombinators.fs" />
     <Compile Include="../Shared/ResultExtensions.fs" />
     <Compile Include="../Shared/Validation.fs" />
     <Compile Include="../Shared/DatabaseSchema.fs" />
     <Compile Include="../Shared/SQLAST.fs" />
+    <Compile Include="../Shared/SQLParser.fs" />
     <Compile Include="../Shared/SQLGenerator.fs" />
     <Compile Include="../Shared/DynamicTable.fs" />
     <Compile Include="../Shared/Shared.fs" />
