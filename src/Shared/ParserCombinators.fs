@@ -14,6 +14,7 @@ open ProjectSpecificLabels
 type BasicLabel =
     | NoLabelSpecified
     | Recursive
+    | Attempt of BasicLabel
     | AndThen of BasicLabel * BasicLabel
     | OrElse of BasicLabel * BasicLabel
     | Many of BasicLabel
@@ -34,6 +35,7 @@ type BasicParserError =
     | UnexpectedChar of char
     | Int32Overflow of string
     | Float64Overflow of string
+    | NonFatal of BasicParserError
     //| CustomError of ProjectSpecificError
 
 module TextInput =
@@ -214,6 +216,14 @@ let satisfy predicate label =
     // return the parser
     {ParseFn=innerFn;Label=label}
 
+let attemptP p =
+    let innerFn input =
+        match runOnInput p input with
+        | Ok result -> Ok result
+        | Error (label,err,pos) -> Error(label,NonFatal err, pos)
+    {ParseFn=innerFn;Label=getLabel p |> Attempt}
+
+
 /// "bindP" takes a parser-producing function f, and a parser p
 /// and passes the output of p into f, to create a new parser
 let bindP f p =
@@ -281,6 +291,7 @@ let andThen p1 p2 =
 let ( .>>. ) = andThen
 
 /// Combine two parsers as "A orElse B"
+/// If the first parser fails with NonFatal error case after consuming input, the parser backtracks and tries the second one.
 let orElse p1 p2 =
     let outerLabel = OrElse ((getLabel p1), (getLabel p2))
     let innerFn (input:Input) =
@@ -292,7 +303,15 @@ let orElse p1 p2 =
         | Ok _ -> 
             // if success, return the original result
             result1
-        | Error (_,_,pos) when startingPos.CharIndex = pos.CharIndex -> 
+        | Error (label,err,pos) when startingPos.CharIndex = pos.CharIndex -> 
+            // if failed without consuming input, run parser2 with the input
+            let result2 = runOnInput p2 input
+            // return parser2's result, overwriting label if it still failed
+            match result2 with
+            | Ok _ -> result2
+            | Error (_,error,pos) when startingPos.CharIndex = pos.CharIndex -> Error(outerLabel,error,pos)
+            | Error (label,error,pos) -> Error(Inside(outerLabel,label),error,pos)
+        | Error (label,NonFatal err,pos) -> // backtrack and still try the second parser if the first failed with nonFatal error.
             // if failed without consuming input, run parser2 with the input
             let result2 = runOnInput p2 input
             // return parser2's result, overwriting label if it still failed
@@ -444,7 +463,8 @@ let pstring str =
     // convert to Parser<char list>
     |> sequence
     // convert Parser<char list> to Parser<string>
-    |> mapP charListToStr 
+    |> mapP charListToStr
+    |> attemptP
     <?> label
 
 let pstringInsensitive str =
@@ -545,15 +565,15 @@ let createParserForwardedToRef<'a,'parserError>() =
 
     wrapperParser, parserRef
 
-let userP = pstring "user"
-let idP = pstring "id"
+let userP = pstring "userName"
+let idP = pstring "userId"
 
 let colsP = choice [
-    userP <?> Integer
-    idP <?> Float
+    userP
+    idP
 ]
 
-run colsP "iq"
+run colsP "quserIq"
 run colsP "fd"
 // usage example for recursive tree parsing
 (*
