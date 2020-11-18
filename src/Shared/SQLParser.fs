@@ -2,6 +2,7 @@ module SQLParser
 
 #if INTERACTIVE
 #load "SQLAST.fs"
+#load "SQLParserLabels.fs"
 #load "ParserCombinators.fs"
 #load "DatabaseSchema.fs"
 #load "ResultExtensions.fs"
@@ -12,30 +13,10 @@ open DatabaseSchema
 open ParserCombinator
 open Microsoft.FSharp.Reflection
 open ResultExtensions
-
-type SQLASTLabel =
-    | ColumnName of string
-    | AndSoOnRecursively
-    | RelationOp of RelationOp
-    | BinaryBooleanOp of BinaryBooleanOp
-    | UnaryBooleanOp of UnaryBinaryOperator
-    | StringLiteral
-    | IntegerLiteral
-    | FloatingPointLiteral
-    | Or of SQLASTLabel * SQLASTLabel
-    | AndThen of SQLASTLabel * SQLASTLabel
-    | AnyOf of SQLASTLabel list
-    | ExpectedChar of char
-    | Many of SQLASTLabel
-    
-
-let pchar c = pchar ExpectedChar c
-let many p = many p <?> (getLabel p |> Many)
-let (.>>) a b = a .>> b <?> (getLabel a)
-let (>>.) a b = a >>. b <?> (getLabel b)
+open ProjectSpecificLabels
 
 let unescapedChar =
-    satisfy (fun c -> c <> '\\' && c <> '\"' && c <> '\'') ()
+    satisfy (fun c -> c <> '\\' && c <> '\"' && c <> '\'') NoLabelSpecified
 
 let escapedChar =
     [ 
@@ -59,41 +40,53 @@ let escapedChar =
 
 
 let stringLiteral =
-    let quote = satisfy (fun c -> c = '\'' || c = '\"') ()
+    let quote = satisfy (fun c -> c = '\'' || c = '\"') NoLabelSpecified
     let allChars = unescapedChar <|> escapedChar
     quote >>. manyChars allChars .>> quote
     |>> Data.String
-    <?> StringLiteral
+    <?> (CustomLabel StringLiteral)
 
 let integerLiteral =
     let plusSignP = pchar '+'
-    (opt plusSignP) >>. pint ignore
+    (opt plusSignP) >>. pint
     |>> Data.Int
-    <?> IntegerLiteral
+    <?> Integer
 
 
 let floatingPointLiteral =
     let plusSignP = pchar '+'
-    (opt plusSignP) >>. pfloat ignore
+    (opt plusSignP) >>. pfloat
     |>> Data.Float
-    <?> FloatingPointLiteral
+    <?> Float
 
-
-let (<|>) a b = orElseL (Or) a b
-let (.>>.) a b = andThenL (fun a1 b1 -> SQLASTLabel.AndThen (a1, b1)) a b
 let (>>%) p x = p |>> (fun _ -> x)
+
+// with optional whitespace between
+let (.>.) a b = a .>> (spaces) .>>. b
+let (>.) a b = a .>> (spaces) >>. b
+let (.>) a b = a .>> (spaces) .>> b
+
+// with mandatory whitespace between
+let (.>.>.) a b = a .>> (spaces1) .>>. b
+let (>.>.) a b = a .>> (spaces1) >>. b
+let (.>.>) a b = a .>> (spaces1) .>> b
 
 let numericLiteral = floatingPointLiteral <|> integerLiteral
 
-let dataLiteralP = choiceL AnyOf [stringLiteral; floatingPointLiteral; integerLiteral] .>> spaces ()
+let dataLiteralP =
+    choice [
+    stringLiteral
+    integerLiteral
+    floatingPointLiteral
+    ]
+    .>> spaces
 
 let relationOperatorP =
     let operatorPwithLabel str op =
         pstring str
-        <?> (op |> RelationOp)
-        .>> spaces ()
+        .>> spaces
         >>% op
-    choiceL AnyOf [
+    choice [
             operatorPwithLabel "=" Equals
             operatorPwithLabel ">=" GreaterOrEquals
             operatorPwithLabel "<=" SmallerOrEquals
@@ -102,26 +95,16 @@ let relationOperatorP =
             operatorPwithLabel "<" Smaller
     ]
 
-let binaryBoolOpP =
-    let operatorPwithLabel str op =
-        pstringInsensitive str
-        <?> (op |> BinaryBooleanOp)
-        .>> spaces ()
-        >>% op
-    choiceL AnyOf [
-        operatorPwithLabel "AND" BinaryBooleanOp.And
-        operatorPwithLabel "OR" BinaryBooleanOp.Or
-    ]
+let andOpP =
+    pstringInsensitive "and" >>% BinaryBooleanOp.And
+
+let orOpP =
+    pstringInsensitive "or" >>% BinaryBooleanOp.Or
 
 let notOpP =
     pstringInsensitive "not"
-    <?> (UnaryBinaryOperator.Not |> UnaryBooleanOp)
-    .>> spaces ()
+    .>> spaces
     >>% UnaryBinaryOperator.Not
-
-let (.>.) a b = a .>> (spaces ()) .>>. b
-let (>.) a b = a .>> (spaces ()) >>. b
-let (.>) a b = a .>> (spaces ()) .>> b
 
 let braceP p =
     pchar '(' >. p .>  pchar ')'
@@ -134,52 +117,62 @@ let addSubOpP =
     pchar '+' >>% BinaryNumericOp.Add
     <|> (pchar '-' >>% Sub)
 
-let columnParsers<'c> (columnP : Parser<Column<'c>,SQLASTLabel,BasicParserError>) =
+let boolP =
+    pstringInsensitive "true" >>% true
+    <|> (pstringInsensitive "false" >>% false)
+
+let columnParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserError>) =
     let fieldExprP, fieldExprPRef = createParserForwardedToRef<FieldExpr<'c>,BasicParserError>()
-    let fieldExprP = fieldExprP <?> AndSoOnRecursively
     let termP =
         columnP |>> FieldExpr.Column
         <|> (dataLiteralP |>> FieldExpr.Value)
         <|> (braceP fieldExprP)
     
-    let binaryExprRebuilder (firstTerm, extraTerms) =
+    let originalTermP =  termP
+
+    let binaryExprRebuilder exprType (firstTerm, extraTerms) =
         List.fold (fun expr (op, nextExpr) ->
-            BinaryFieldExpr (expr,op,nextExpr)) firstTerm extraTerms
+            exprType (expr,op,nextExpr)) firstTerm extraTerms
     
     let mulDivP =
-        termP .>.
-        (mulDivOpP .>. termP |> many)
-        |>> binaryExprRebuilder
+        termP .>>.
+        (mulDivOpP .>>. termP |> many)
+        |>> binaryExprRebuilder BinaryFieldExpr
     
     let addSubP =
-        mulDivP .>.
-        (addSubOpP .>. mulDivP |> many)
-        |>> binaryExprRebuilder
+        mulDivP .>>.
+        (addSubOpP .>>. mulDivP |> many)
+        |>> binaryExprRebuilder BinaryFieldExpr
 
-    fieldExprPRef := addSubP <?> ()
-    fieldExprP
-    //let boolExprP, boolExprPRef = createParserForwardedToRef<BoolExpression<'c>,BasicParserError>()
-    //let boolExprP = boolExprP <?> AndSoOnRecursively
-    //let binaryBoolExprP =
-    //    boolExprP .>>. binaryBoolOpP .>>. boolExprP
-    //    |>> (fun (((leftExpr),op),(rightExpr)) -> BinaryExpr(leftExpr,op,rightExpr))
-    //let relationExprP =
-    //    fieldExpressionP .>>. relationOperatorP .>>. fieldExpressionP
-    //    |>> (fun (((leftExpr),op),(rightExpr)) -> RelationExpr(leftExpr,op,rightExpr))
-    //let unaryNotExprP =
-    //    notOpP >>. boolExprP |>> BoolExpression.Not
-//
-    //let fixRecursiveParserDef parserList =
-    //    boolExprPRef := choice parserList
-    //    boolExprP <?> (List.map getLabel parserList |> AnyOf)
-    //    
-//
-    //let boolExprP = fixRecursiveParserDef [
-    //    relationExprP
-    //    unaryNotExprP
-    //    binaryBoolExprP
-    //    ]
-    //{|BoolExprP=boolExprP|}
+    let fixRecursiveParserLabel parserRef parserRefImpl rootParser =
+        parserRef := parserRefImpl
+        rootParser //<?> (getLabel parserRefImpl)
+    let fieldExprP = fixRecursiveParserLabel fieldExprPRef addSubP fieldExprP
+    
+
+    let boolExprP, boolExprPRef = createParserForwardedToRef<BoolExpr<'c>,BasicParserError>()
+    let notBoolExpr = pstringInsensitive "not" >.>. boolExprP |>> BoolExpr.Not
+    let relationExprP =
+        fieldExprP .>. relationOperatorP .>. fieldExprP
+        |>> (fun ((l,op),r) -> RelationExpr (l,op,r))
+    let termP =
+        boolP |>> BoolLiteral
+        <|> (braceP boolExprP |>> BracedBoolExpr)
+        <|> relationExprP
+        <|> notBoolExpr
+    let andExprP =
+        termP .>>.
+        (spaces1 >>. andOpP .>.>. termP |> many)
+        |>> binaryExprRebuilder BinaryBoolExpr
+        
+    let orExprP =
+        andExprP .>>.
+        (spaces1  >>. orOpP .>.>. andExprP |> many)
+        |>> binaryExprRebuilder BinaryBoolExpr
+    
+    let boolExprP = fixRecursiveParserLabel boolExprPRef orExprP boolExprP
+
+    {|FieldExprP=fieldExprP; BoolExprP=boolExprP; TermP = originalTermP|}
 
 let columnP<'c> (getColumnName: 'c -> string) =
     FSharpType.GetUnionCases typeof<'c>
@@ -206,11 +199,11 @@ let columnP<'c> (getColumnName: 'c -> string) =
         let colName = getColumnName columnCase
         colName
         |> pstring
-        .>> spaces ()
+        .>> spaces
         >>% {Col=columnCase;Type=DBString}
-        <?> ColumnName colName)
+        <?> (ColumnName colName |> CustomLabel))
     |> List.ofSeq
-    |> choiceL AnyOf
+    |> choice
 
 let projectAppColumnP = columnP<ProjectAppColumn> getColumnName
 
@@ -225,47 +218,47 @@ let addData left right =
     | Int l ->
         match right with
         | Int r -> l + r |> Int
-        | Float r -> float l + r |> Float
-        | String r -> string l + r |> String
-    | Float l ->
+        | Data.Float r -> float l + r |> Data.Float
+        | Data.String r -> string l + r |> Data.String
+    | Data.Float l ->
         match right with
-        | Int r -> l + float r |> Float
-        | Float r -> l + r |> Float
-        | String r -> string l + r |> String
-    | String l ->
+        | Int r -> l + float r |> Data.Float
+        | Data.Float r -> l + r |> Data.Float
+        | Data.String r -> string l + r |> Data.String
+    | Data.String l ->
         match right with
-        | Int r -> l + string r |> String
-        | Float r -> l + string r |> String
-        | String r -> l + r |> String
+        | Int r -> l + string r |> Data.String
+        | Data.Float r -> l + string r |> Data.String
+        | Data.String r -> l + r |> Data.String
     |> Ok
 let subData left right =
     match left, right with
-    | _, String _ ->  InvalidOperand (Sub,right) |> Error
-    | String _, _ -> InvalidOperand (Sub,right) |> Error
-    | Int l, Int r -> l - r |> Int |> Ok
-    | Int l,  Float r -> float l - r |> Float |> Ok
-    | Float l, Int r -> l - float r |> Float |> Ok
-    | Float l, Float r -> l - r |> Float |> Ok
+    | _, Data.String _ ->  InvalidOperand (Sub,right) |> Error
+    | Data.String _, _ -> InvalidOperand (Sub,right) |> Error
+    | Data.Int l, Int r -> l - r |> Int |> Ok
+    | Data.Int l,  Data.Float r -> float l - r |> Data.Float |> Ok
+    | Data.Float l, Int r -> l - float r |> Data.Float |> Ok
+    | Data.Float l, Data.Float r -> l - r |> Data.Float |> Ok
 let mulData left right =
     match left, right with
-    | _, String _ ->  InvalidOperand (Sub,right) |> Error
-    | String _, _ -> InvalidOperand (Sub,right) |> Error
+    | _, Data.String _ ->  InvalidOperand (Sub,right) |> Error
+    | Data.String _, _ -> InvalidOperand (Sub,right) |> Error
     | Int l, Int r -> l * r |> Int |> Ok
-    | Int l,  Float r -> float l * r |> Float |> Ok
-    | Float l, Int r -> l * float r |> Float |> Ok
-    | Float l, Float r -> l * r |> Float |> Ok
+    | Int l,  Data.Float r -> float l * r |> Data.Float |> Ok
+    | Data.Float l, Int r -> l * float r |> Data.Float |> Ok
+    | Data.Float l, Data.Float r -> l * r |> Data.Float |> Ok
 let divData left right =
     match left, right with
-    | _, String _ ->  InvalidOperand (Sub,right) |> Error
-    | String _, _ -> InvalidOperand (Sub,right) |> Error
+    | _, Data.String _ ->  InvalidOperand (Sub,right) |> Error
+    | Data.String _, _ -> InvalidOperand (Sub,right) |> Error
     | Int num, _ | _, Int num when num = 0  ->
         DivisionByZero |> Error
-    | Float num, _ | _, Float num when num = 0.0 ->
+    | Data.Float num, _ | _, Data.Float num when num = 0.0 ->
         DivisionByZero |> Error
     | Int l, Int r -> l / r |> Int |> Ok
-    | Int l,  Float r -> float l / r |> Float |> Ok
-    | Float l, Int r -> l / float r |> Float |> Ok
-    | Float l, Float r -> l / r |> Float |> Ok
+    | Int l,  Data.Float r -> float l / r |> Data.Float |> Ok
+    | Data.Float l, Int r -> l / float r |> Data.Float |> Ok
+    | Data.Float l, Data.Float r -> l / r |> Data.Float |> Ok
 
 let solveBinaryFieldExpr left op right =
     match op with
@@ -286,15 +279,29 @@ let rec binaryFieldExprSolver expr =
             return! solveBinaryFieldExpr left op right
         }
 
-run (projectAppBoolExprP |>> binaryFieldExprSolver) "1+1-1"
-run (projectAppBoolExprP |>> binaryFieldExprSolver) "-1+1-1"
-run (projectAppBoolExprP |>> binaryFieldExprSolver) "1-2-3"
+run projectAppBoolExprP.TermP "1"
+
+run stringLiteral "1"
+
+let testP1 = pchar 'a'
+let testP2 = pchar 'b'
+let testP3 = pchar 'c'
+run (testP1 .>>. testP2 <|> (testP1 .>>. testP3)) "ac"
+run (projectAppColumnP) "UserName"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1+1-1"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "-1+1-1"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1-2-3)"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1-(2-3)"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1+2*3"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1*2+3"
+run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "(1+2)*3"
+run (projectAppBoolExprP.BoolExprP) "false and not true"
 
 
 let testPrinter = printResult (fun a -> "") (fun e -> e.ToString())
 run escapedChar "g\"" |> testPrinter
 
-run booleanOperator "oR"
 run stringLiteral "\"ab\\tde\""
 run integerLiteral "-12121"
 run floatingPointLiteral "+1111:0"
