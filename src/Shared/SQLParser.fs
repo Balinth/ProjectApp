@@ -76,8 +76,8 @@ let numericLiteral = floatingPointLiteral <|> integerLiteral
 let dataLiteralP =
     choice [
     stringLiteral
+    attemptP floatingPointLiteral
     integerLiteral
-    floatingPointLiteral
     ]
     .>> spaces
 
@@ -278,35 +278,3 @@ let rec binaryFieldExprSolver expr =
             let! right = binaryFieldExprSolver right
             return! solveBinaryFieldExpr left op right
         }
-
-run projectAppBoolExprP.TermP "1"
-
-run stringLiteral "1"
-
-let testP1 = pchar 'a'
-let testP2 = pchar 'b'
-let testP3 = pchar 'c'
-run (testP1 .>>. testP2 <|> (testP1 .>>. testP3)) "ac"
-run (projectAppColumnP) "UserName"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1+1-1"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "-1+1-1"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1-2-3)"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1-(2-3)"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1+2*3"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1*2+3"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "(1+2)*3"
-run (projectAppBoolExprP.BoolExprP) "false and not true"
-
-
-let testPrinter = printResult (fun a -> "") (fun e -> e.ToString())
-run escapedChar "g\"" |> testPrinter
-
-run stringLiteral "\"ab\\tde\""
-run integerLiteral "-12121"
-run floatingPointLiteral "+1111:0"
-run dataLiteralP "\"fisfos\""
-run dataLiteralP "111"
-run dataLiteralP "111."
-run dataLiteralP "fdsfs"
-run dataLiteralP "\"fsfds" // should not work...

@@ -14,6 +14,8 @@ Overview of the language from my (C# dev) perspective, what makes it noteworthy 
 Extra thoughts on the one killer feature of the functional paradigm, that I miss every day when working in non-functional languages.
 ## 4. [Parser combinators](parser_lib.md)
 Notes on integrating Scott Wlaschin's simple parser combinator implementation into the project.
+## 4.1 [Parser combinators - trouble with my concept](parser_lib_ruh_roh.md)
+I explore a critical problem with my original vision of combinators with parametrized labels. This is also a not all is perfect in F# kind of post, to show that all my other praise is not just blind cheerleading.
 ## 5. [SQL AST: the core idea](sql_ast.md)
 A rundown of my core idea for the domain model of the webapp, and how can it be implemented with the tools a functional programming language provides.
 ## 6. [SQL AST: parsing](sql_ast_parse.md)

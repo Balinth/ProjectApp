@@ -89,7 +89,7 @@ let stringizeRelationExpr db ctx op e1 e2 : Result<string*Parametrization list,E
 let wrapExp exp =
     "(" + exp + ")"
 
-let rec stringizeListExpr db ctx op (exprs : Expression<'c> list)  =
+let rec stringizeListExpr db ctx op (exprs : BoolExpr<'c> list)  =
     let opStr = stringizeBoolOperator op
     if exprs.IsEmpty then Error [(OperatorMustHaveArguments op)]
     else
@@ -104,8 +104,8 @@ let rec stringizeListExpr db ctx op (exprs : Expression<'c> list)  =
 
 and stringizeExpression (db: DB<'c>) ctx exp : Result<string*Parametrization list,ErrorMsg<'c> list> =
     match exp with
-    | ListExpr (op,exps) -> stringizeListExpr db ctx op exps
-    | RelationExpr (op,e1,e2) -> stringizeRelationExpr db ctx op e1 e2
+    //| ListExpr (op,exps) -> stringizeListExpr db ctx op exps
+    | RelationExpr (op,e1,e2) -> stringizeRelationExpr db ctx e1 op e2
     | Not ex -> stringizeExpression db ctx ex
     |> Result.map (fun (s,p) -> (wrapExp s), p)
 

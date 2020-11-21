@@ -7,9 +7,19 @@ nuget Dapper
     nuget FSharp.Core
     nuget Giraffe
     nuget Fable.Remoting.Giraffe ~> 3
-nuget Microsoft.AspNetCore.Authentication.AzureAD.UI
-nuget Microsoft.Extensions.Configuration.Json
-nuget System.Data.SQLite.Core
+    nuget Microsoft.AspNetCore.Authentication.AzureAD.UI
+    nuget Microsoft.Extensions.Configuration.Json
+    nuget System.Data.SQLite.Core
+
+group ServerTests
+    source https://api.nuget.org/v3/index.json
+    framework: netcoreapp3.1
+    storage: none
+    nuget FSharp.Core
+    nuget Expecto
+    nuget YoloDev.Expecto.TestSdk
+    nuget Microsoft.NET.Test.Sdk
+
 
 group Client
     source https://api.nuget.org/v3/index.json
@@ -21,7 +31,7 @@ group Client
     nuget Fable.Elmish.Debugger ~> 3
     nuget Fable.Elmish.HMR ~> 4
     nuget Fable.Elmish.React ~> 3
-nuget Fable.Fetch
+    nuget Fable.Fetch
     nuget Fable.React ~> 5
     nuget Fable.Remoting.Client ~> 5
     nuget Fulma ~> 2

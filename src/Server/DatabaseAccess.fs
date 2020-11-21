@@ -126,8 +126,8 @@ let executeQueryTyped<'T> (sqlStr, parameters) =
 
 let getUserResult userNameID =
     let expr = RelationExpr (
-                Equals,
                 UserNameID |> UserTable |> ProjectAppColumns |> Column,
+                Equals,
                 userNameID |> String |> Value
                 )
     let queryColumns = [

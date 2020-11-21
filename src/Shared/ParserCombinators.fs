@@ -565,16 +565,6 @@ let createParserForwardedToRef<'a,'parserError>() =
 
     wrapperParser, parserRef
 
-let userP = pstring "userName"
-let idP = pstring "userId"
-
-let colsP = choice [
-    userP
-    idP
-]
-
-run colsP "quserIq"
-run colsP "fd"
 // usage example for recursive tree parsing
 (*
 let (<||>) a b = orElseL (fun l -> sprintf "Expected %s or else %s" (fst l) (snd l)) a b

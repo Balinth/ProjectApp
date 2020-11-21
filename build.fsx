@@ -19,6 +19,7 @@ open Newtonsoft.Json.Linq
 Target.initEnvironment ()
 
 let serverPath = Path.getFullName "./src/Server"
+let serverTestsPath = Path.getFullName "./src/ServerTests"
 let clientPath = Path.getFullName "./src/Client"
 let clientDeployPath = Path.combine clientPath "deploy"
 let deployDir = Path.getFullName "./deploy"
@@ -131,6 +132,7 @@ Target.create "InstallClient" (fun _ ->
 
 Target.create "Build" (fun _ ->
     runDotNet "build" serverPath
+    runDotNet "build" serverTestsPath
     Shell.regexReplaceInFileWithEncoding
         "let app = \".+\""
        ("let app = \"" + release.NugetVersion + "\"")
@@ -138,6 +140,9 @@ Target.create "Build" (fun _ ->
         (Path.combine clientPath "Version.fs")
     runTool yarnTool "webpack-cli -p" __SOURCE_DIRECTORY__
 )
+
+Target.create "TestServer" <| fun _ ->
+    runDotNet "run" serverTestsPath
 
 Target.create "Run" (fun _ ->
     let server = async {
@@ -193,6 +198,7 @@ open Fake.Core.TargetOperators
 "Clean"
     ==> "InstallClient"
     ==> "Build"
+    ==> "TestServer"
     ==> "Bundle"
     ==> "Docker"
 
