@@ -1,24 +1,21 @@
 module Tests
 
+open Microsoft.FSharp.Quotations
+
 open Expecto
 
 open ParserCombinator
 open SQLAST
 open SQLParser
-(*
+open SQLGenerator
+open ResultExtensions
 
-run (projectAppColumnP) "UserName"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1+1-1"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "-1+1-1"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1-2-3)"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1-(2-3)"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1+2*3"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "1*2+3"
-run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) "(1+2)*3"
-run (projectAppBoolExprP.BoolExprP) "false and not true"
 
-*)
+let rec funName = function
+| Patterns.Call(None, methodInfo, _) -> methodInfo.Name
+| Patterns.Lambda(_, expr) -> funName expr
+| Patterns.ValueWithName(expr,valType,name) -> expr.GetType().ToString()
+| somethingElse -> sprintf "Unexpected input: %A" somethingElse |> failwith
 
 [<Tests>]
 let tests =
@@ -33,6 +30,57 @@ let tests =
   let boolExprParserTester str =
     run projectAppBoolExprP.BoolExprP str
     |> function | Ok(a,b) -> Ok a | somethingElse -> Error somethingElse
+  
+  let boolExprParserEvalTester str =
+    result {
+      let! parsed,pos = run projectAppBoolExprP.BoolExprP str |> Result.mapError (fun e -> e :> obj)
+      let! evaulationResult = boolExprSolver parsed |> Result.mapError (fun e -> e :> obj)
+      return evaulationResult
+    }
+
+  let roundtripTest forwardFun backwardFun input =
+    let forwardName = funName <@forwardFun@>
+    let backwardName = funName <@backwardFun@>
+    let listLabel = sprintf "Roundtrip between %s and %s on input: %s" forwardName backwardName input
+    let forwardLabel = sprintf "Forward trip with %s on input: %s" forwardName input
+    let backwardLabel = sprintf "Backward trip with %s on input: %s" backwardName input
+    testSequenced <| testList listLabel [
+      testCase forwardLabel <| fun _ ->
+        Expect.isOk (forwardFun input) ""
+      testCase backwardLabel <| fun _ ->
+        let (forwardResult:'a) = forwardFun input |> Expect.wantOk <| "Failed within first forwardFun"
+        let backwardResult = backwardFun forwardResult |> Expect.wantOk <| "Failed within backwardFun"
+        let roundTripResult =
+          forwardFun backwardResult |> Expect.wantOk
+          <| "Failed within second forwardFun, regenerated input was: " + backwardResult
+        Expect.equal roundTripResult forwardResult "Roundtrip result not equal to first pass."
+    ]
+
+  let stringizeData data =
+    match data with
+    | Int i -> string i
+    | Data.Float f -> if f % 1.0 = 0.0 then string f + ".0" else string f
+    | Data.String s -> sprintf "\"%s\"" s
+  
+  let reParametrizeSQLString (str, parameters) =
+    List.fold (fun (str:string) parameter ->
+      str.Replace(stringizeParameterName parameter, stringizeData parameter.ParamValue)
+      ) str parameters
+
+  let exprTestCase inputString expectedResult =
+    let testFunc = boolExprParserEvalTester
+    let forwardsFunc = boolExprParserTester
+    let backwardsFunc = stringizeExpression projectAppDB (ctxFactory()) [] >> reParametrizeSQLString >> Ok
+    let testFuncName = funName <@testFunc@>
+    let caseLabel =
+      sprintf "should parse \"%s\" with %s to the expected result." inputString testFuncName
+    testList "expression" [
+      testCase caseLabel <| fun _ ->
+        let expected = Ok expectedResult
+        let actual = testFunc inputString
+        Expect.equal actual expected ""
+      roundtripTest forwardsFunc backwardsFunc inputString
+    ]
 
   testList "SQLParser" [
     testCase "should parse single number" <| fun _ ->
@@ -84,6 +132,50 @@ let tests =
       let expected = BinaryBoolExpr(BoolLiteral true, Or, BinaryBoolExpr(BoolLiteral true,And,BoolLiteral false)) |> Ok
       let actual = boolExprParserTester "true or true and false"
       Expect.equal actual expected ""
+      
+    testCase "should parse true and false, eval it to false" <| fun _ ->
+      let expected = Ok false
+      let actual = boolExprParserEvalTester "true and false"
+      Expect.equal actual expected ""
+    testCase "should parse true or false, eval it to true" <| fun _ ->
+      let expected = Ok true
+      let actual = boolExprParserEvalTester "true or false"
+      Expect.equal actual expected ""
+    testCase "should parse multiple ands, and eval to false" <| fun _ ->
+      let expected = Ok false
+      let actual = boolExprParserEvalTester "true and true and false"
+      Expect.equal actual expected ""
+    testCase "should parse and with higher precedence than or and eval to true" <| fun _ ->
+      let expected = Ok true
+      let actual = boolExprParserEvalTester "true or true and false"
+      Expect.equal actual expected ""
+    testCase "should parse braced or with higher precedence than and, and eval to false" <| fun _ ->
+      let expected = Ok false
+      let actual = boolExprParserEvalTester "(true or true) and false"
+      Expect.equal actual expected ""
+      
+    exprTestCase "0 < 1" true
+    exprTestCase "0 <= 0" true
+    exprTestCase "0 < -1" false
+    exprTestCase "0 > 1" false
+    exprTestCase "1.0 = 1" true
+    exprTestCase "1.1 = 1" false
+    exprTestCase "0.9 = 1" false
+    exprTestCase "1 = 1.0" true
+    exprTestCase "1.1 = 1.1" true
+    exprTestCase "0 <> 1" true
+    exprTestCase "0.5 <> 0.5" false
+    exprTestCase "false and 1=1" false
+    exprTestCase "1=1 and false" false
+    exprTestCase "1+1*2=3 and 3-1+2=4" true
+    exprTestCase "1+1.5*2=4.0 and 3-(-1+2.5*2)=-1.0" true
+    exprTestCase "\"1\"=1" true
+    exprTestCase "1=\"1\"" true
+    exprTestCase "\"1\"=\"1\"" true
+    exprTestCase "\"fisfos\"=\"fisfos\"" true
+    exprTestCase "\"a\"<\"b\"" true
+    exprTestCase "\"1\"=1 and 1.0 = 1 and 1 = 1.0 and " true
+    //exprTestCase boolExprParserTester "1=1 and false" (BinaryBoolExpr(RelationExpr(Int 1 |> Value,Equals,Int 1 |> Value),And,BoolLiteral false))
 
     // sample tests for reference
     // the ptestCase function ignores them

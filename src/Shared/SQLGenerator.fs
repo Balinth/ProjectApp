@@ -67,47 +67,59 @@ let stringizeRelationOperator op =
     | Smaller -> "<"
     | SmallerOrEquals -> "<="
 
+let stringizeBinaryNumericOperator op =
+    match op with
+    | Add -> "+"
+    | Sub -> "-"
+    | Mul -> "*"
+    | Div -> "/"
+
 let stringizeBoolOperator op =
     match op with
     | And -> "AND"
     | Or -> "OR"
 
-let stringizeFieldExpr db ctx expr =
+let stringizeParameterName param =
+    "@" + fst param.ParamName + (snd param.ParamName |> string)
+
+let rec stringizeFieldExpr db ctx parameters expr =
     match expr with
     | Value v ->
         let param = parametrizeData ctx v
-        ("@" + fst param.ParamName + (snd param.ParamName |> string),Some param)
-    | Column c -> db.QualifiedColName c.Col, None
+        (stringizeParameterName param,param::parameters)
+    | Column c -> db.QualifiedColName c.Col, parameters
+    | BracedFieldExpr(e) ->
+        let innerExpr, innerParameters = stringizeFieldExpr db ctx parameters e
+        (sprintf "(%s)" innerExpr, innerParameters)
+    | BinaryFieldExpr(l, op, r) ->
+        //match op, r with
+        //| 
+        let leftExpr, leftParams = stringizeFieldExpr db ctx parameters l
+        let rightExpr, rightParams = stringizeFieldExpr db ctx leftParams r
+        (sprintf "%s %s %s" leftExpr (stringizeBinaryNumericOperator op) rightExpr, rightParams)
 
-let stringizeRelationExpr db ctx op e1 e2 : Result<string*Parametrization list,ErrorMsg<'c> list> =
-    let fieldStr1, parameter1 = stringizeFieldExpr db ctx e1
-    let fieldStr2, parameter2 = stringizeFieldExpr db ctx e2
-    let parameters = [parameter1; parameter2] |> List.collect Option.toList
-    (fieldStr1 + stringizeRelationOperator op + fieldStr2, parameters)
-    |> Ok
+let stringizeRelationExpr db ctx parameters op e1 e2 : string*Parametrization list =
+    let leftExpr, leftParameters = stringizeFieldExpr db ctx parameters e1
+    let rightExpr, rightParameters = stringizeFieldExpr db ctx leftParameters e2
+    (leftExpr + stringizeRelationOperator op + rightExpr, rightParameters)
 
-let wrapExp exp =
-    "(" + exp + ")"
+let stringizeBoolLiteral = function | true -> "TRUE" | fales -> "FALSE"
 
-let rec stringizeListExpr db ctx op (exprs : BoolExpr<'c> list)  =
-    let opStr = stringizeBoolOperator op
-    if exprs.IsEmpty then Error [(OperatorMustHaveArguments op)]
-    else
-        exprs 
-        |> List.map (stringizeExpression db ctx)
-        |> List.fold 
-            (lift2Result (fun (a:string*Parametrization list) b-> 
-            let strPart = fst a + (if (fst a).Length <> 0 then " " + opStr + " " else "") + (fst b)
-            let parametersPart = List.concat [snd a; (snd b)]
-            (strPart,parametersPart)))
-            (Ok ("",[]))
-
-and stringizeExpression (db: DB<'c>) ctx exp : Result<string*Parametrization list,ErrorMsg<'c> list> =
+let rec stringizeExpression (db: DB<'c>) ctx parameters exp : string*Parametrization list =
     match exp with
-    //| ListExpr (op,exps) -> stringizeListExpr db ctx op exps
-    | RelationExpr (op,e1,e2) -> stringizeRelationExpr db ctx e1 op e2
-    | Not ex -> stringizeExpression db ctx ex
-    |> Result.map (fun (s,p) -> (wrapExp s), p)
+    | RelationExpr (op,e1,e2) -> stringizeRelationExpr db ctx parameters e1 op e2
+    | Not ex ->
+        let expr, newParams = stringizeExpression db ctx parameters ex
+        (sprintf "NOT %s" expr, newParams)
+    | BinaryBoolExpr(l, op, r) ->
+        let leftExpr, leftParams = stringizeExpression db ctx parameters l
+        let rightExpr, rightParams = stringizeExpression db ctx leftParams r
+        let op = stringizeBoolOperator op
+        (sprintf "%s %s %s" leftExpr op rightExpr, rightParams)
+    | BoolLiteral(lit) -> (stringizeBoolLiteral lit, parameters)
+    | BracedBoolExpr(expr) ->
+        let innerExpr, newParams = stringizeExpression db ctx parameters expr
+        (sprintf "(%s)" innerExpr, newParams)
 
 let stringizeSelect db (query:QueryStatement<'c>) =
     let cols = List.map (fun c -> c.Col) query.Columns
@@ -124,15 +136,15 @@ let map2 r1 r2 fn =
     | Error e1, Error e2 -> List.concat [e1; e2] |> Error
     | Error e1, _ -> Error e1
     | _, Error e2 -> Error e2
-// Result<()
+
 let stringizeSQLQuery db (query:QueryStatement<'c>)  =
     let ctx = ctxFactory()
     let select = stringizeSelect db query
     let where =
         match query.Condition with
         | Some cond ->
-            stringizeExpression db ctx cond
-            >>= ((fun a -> "WHERE " + fst a, snd a) >> Ok)
+            stringizeExpression db ctx [] cond
+            |> ((fun a -> "WHERE " + fst a, snd a) >> Ok)
         | None -> Ok ("", [])
     map2 select where (fun s w -> (s + Environment.NewLine + fst w), snd w)
 

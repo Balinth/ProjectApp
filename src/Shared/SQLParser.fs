@@ -126,7 +126,7 @@ let columnParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserError>)
     let termP =
         columnP |>> FieldExpr.Column
         <|> (dataLiteralP |>> FieldExpr.Value)
-        <|> (braceP fieldExprP)
+        <|> (braceP fieldExprP |>> FieldExpr.BracedFieldExpr)
     
     let originalTermP =  termP
 
@@ -135,13 +135,13 @@ let columnParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserError>)
             exprType (expr,op,nextExpr)) firstTerm extraTerms
     
     let mulDivP =
-        termP .>>.
-        (mulDivOpP .>>. termP |> many)
+        termP .>.
+        (mulDivOpP .>. termP |> many)
         |>> binaryExprRebuilder BinaryFieldExpr
     
     let addSubP =
-        mulDivP .>>.
-        (addSubOpP .>>. mulDivP |> many)
+        mulDivP .>.
+        (addSubOpP .>. mulDivP |> many)
         |>> binaryExprRebuilder BinaryFieldExpr
 
     let fixRecursiveParserLabel parserRef parserRefImpl rootParser =
@@ -162,12 +162,12 @@ let columnParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserError>)
         <|> notBoolExpr
     let andExprP =
         termP .>>.
-        (spaces1 >>. andOpP .>.>. termP |> many)
+        (spaces >>. andOpP .>.>. termP |> many)
         |>> binaryExprRebuilder BinaryBoolExpr
         
     let orExprP =
         andExprP .>>.
-        (spaces1  >>. orOpP .>.>. andExprP |> many)
+        (spaces  >>. orOpP .>.>. andExprP |> many)
         |>> binaryExprRebuilder BinaryBoolExpr
     
     let boolExprP = fixRecursiveParserLabel boolExprPRef orExprP boolExprP
@@ -209,9 +209,15 @@ let projectAppColumnP = columnP<ProjectAppColumn> getColumnName
 
 let projectAppBoolExprP = (columnParsers projectAppColumnP)
 
+//run projectAppBoolExprP.BoolExprP "1+1*2=3 and 3-1+2=4"
+//run projectAppBoolExprP.BoolExprP "1+ 1*2=3 AND 3 - 1 + 2=4"
+
 type ExprError =
     | InvalidOperand of BinaryNumericOp * Data
+    | Errors of ExprError list
     | DivisionByZero
+    | CantSolveColumnRef
+    | InvalidLiteralCast of Original: Data * TargetType: Data
 
 let addData left right =
     match left with
@@ -278,3 +284,68 @@ let rec binaryFieldExprSolver expr =
             let! right = binaryFieldExprSolver right
             return! solveBinaryFieldExpr left op right
         }
+    | Column(_) -> Error CantSolveColumnRef 
+
+let dataCastToFloat data =
+    match data with
+    | Int i -> float i |> Data.Float |> Ok
+    | Data.Float _ -> data |> Ok
+    | Data.String s ->
+        let success, parsed = System.Double.TryParse s
+        match success with
+        | false -> InvalidLiteralCast(data,Data.Float 0.0) |> Error
+        | true -> Data.Float parsed |> Ok
+
+let dataCastToString data =
+    match data with
+    | Int i -> string i
+    | Data.Float f -> string f
+    | Data.String s -> s
+    |> Data.String
+
+let dataCastToInt data =
+    match data with
+    | Int _ -> data |> Ok
+    | Data.Float f -> int f |> Int |> Ok
+    | Data.String s ->
+        let success, parsed = System.Int32.TryParse s
+        match success with
+        | false -> InvalidLiteralCast(data,Data.Int 0) |> Error
+        | true -> Data.Int parsed |> Ok
+
+let dataUpCastToCommonRepresentation left right =
+    match left, right with
+    | Data.String s, _ -> (left, dataCastToString right) |> Ok
+    | _, Data.String s -> (dataCastToString left, right) |> Ok
+    | Data.Float s, _ -> dataCastToFloat right |> Result.map (fun r -> (left,r))
+    | _, Data.Float s -> dataCastToFloat left  |> Result.map (fun l -> (l,right))
+    | _, _ -> (left, right) |> Ok
+    
+
+
+let rec boolExprSolver expr =
+    match expr with
+    | BoolLiteral(lit) -> lit |> Ok
+    | BinaryBoolExpr(l,o,r) ->
+        result {
+            let! left = boolExprSolver l
+            let! right = boolExprSolver r
+            return match o with
+                    | And -> left && right
+                    | Or -> left || right
+        }
+    | RelationExpr(l, o, r) ->
+        result {
+            let! l = binaryFieldExprSolver l
+            let! r = binaryFieldExprSolver r
+            let! l,r = dataUpCastToCommonRepresentation l r
+            return match o with
+                    | Equals -> l = r
+                    | Greater -> l > r
+                    | GreaterOrEquals -> l >= r
+                    | Smaller -> l < r
+                    | SmallerOrEquals -> l <= r
+                    | NotEquals -> l <> r
+        }
+    | Not(e) -> boolExprSolver e |> Result.map not
+    | BracedBoolExpr(e) -> boolExprSolver e
