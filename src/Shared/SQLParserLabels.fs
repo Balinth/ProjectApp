@@ -5,3 +5,5 @@ type ProjectSpecificLabel =
     | NumericExpr
     | StringLiteral
     | ColumnName of string
+    | TableName of string
+    

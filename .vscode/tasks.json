@@ -13,6 +13,15 @@
             "problemMatcher": [ "$msCompile" ]
         },
         {
+            "label": "Build ServerTests",
+            "command": "dotnet",
+            "args": [ "build" ],
+            "type": "shell",
+            "options": { "cwd": "${workspaceFolder}/src/ServerTests" },
+            "group": "build",
+            "problemMatcher": [ "$msCompile" ]
+        },
+        {
             "label": "Watch Client and Server",
             "command": "dotnet",
             "args": [ "fake", "build", "-t", "Run" ],

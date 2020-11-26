@@ -18,23 +18,6 @@ type Parametrization = {
     ParamValue : Data
 }
 
-let getColumnType col =
-    match col with
-    | UserTable u ->
-        match u with
-        | UserName -> DBString
-        | PrimaryEmail -> DBString
-        | UserNameID -> DBString
-        | UserID -> DBInt
-        | GivenName -> DBString
-        | FamilyName -> DBString
-    | ProjectTable p ->
-        match p with
-        | ProjectName -> DBString
-        | ProjectID -> DBString
-        | StartDate -> DBInt
-        | Code -> DBInt
-
 let getTables db cols =
     match cols with
     | [] -> Error [QueryHasNoColumns]

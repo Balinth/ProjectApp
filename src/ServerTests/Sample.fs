@@ -6,19 +6,185 @@ open Expecto
 
 open ParserCombinator
 open SQLAST
+open DatabaseSchema
 open SQLParser
+open ExpressionEvaulating
 open SQLGenerator
 open ResultExtensions
 
-
+// utility functions
 let rec funName = function
 | Patterns.Call(None, methodInfo, _) -> methodInfo.Name
 | Patterns.Lambda(_, expr) -> funName expr
 | Patterns.ValueWithName(expr,valType,name) -> expr.GetType().ToString()
 | somethingElse -> sprintf "Unexpected input: %A" somethingElse |> failwith
 
+let stripParseResultPos = function | Ok(a,b) -> Ok(a) | Error err -> Error err
+
+let stringizeData data =
+  match data with
+  | Int i -> string i
+  | Data.Float f -> if f % 1.0 = 0.0 then string f + ".0" else string f
+  | Data.String s -> sprintf "\"%s\"" s
+
+let reParametrizeSQLString (str, parameters) =
+  List.fold (fun (str:string) parameter ->
+    str.Replace(stringizeParameterName parameter, stringizeData parameter.ParamValue)
+    ) str parameters
+
+let isLetterOrDigitOrQuote c =
+    System.Char.IsLetterOrDigit c
+    || c = '\"'
+
+let segmentP =
+    let wordP =
+        attemptP pfloat |>> ignore
+        <|> (attemptP pint |>> ignore)
+        <|> (manyChars1 (satisfy isLetterOrDigitOrQuote (BasicLabel.String "word")) |>> ignore)
+    getPosP
+    .>> (sepBy1 wordP spaces |>> ignore)
+    .>>. getPosP
+
+let specialCharP =
+    let anyOtherSpecialP =
+        fun c ->
+            System.Char.IsLetterOrDigit c = false 
+            && System.Char.IsWhiteSpace c = false
+        |> satisfy <| NoLabelSpecified
+        |>> string
+    let specialCharPs = 
+        [
+            "+="
+            "++"
+            "+"
+            "-="
+            "--"
+            "-"
+            "*="
+            "*"
+            "/="
+            "/"
+            "%="
+            "%"
+            "\\"
+            "?"
+            ":"
+            "."
+            ","
+            ";"
+            "|"
+            "="
+            "<>"
+            "<="
+            ">="
+            "<"
+            ">"
+            "("
+            ")"
+        ]
+        |> List.map (pstring >> attemptP)
+        |> List.append <| [anyOtherSpecialP]
+        |> choice
+
+    spaces
+    >>. getPosP
+    .>> specialCharPs
+    .>>. getPosP
+    .>> spaces
+
+let getSpecialChars =
+    segmentP
+    <|> specialCharP
+    |> many1
+    //|>> List.map (fun (a, b) -> [a;b] )
+    //|>> List.concat
+    .>>. (opt segmentP)
+    |>> (fun (list,tail) ->
+        match tail with
+        | Some tail -> List.append list [tail]
+        | None -> list)
+
+open System.Text
+
+let rec buildStr ((sb:StringBuilder),(current:Input)) (target:Input) =
+    match TextInput.nextChar current, target with
+    // we finished with folding to this target input
+    | (newCurrent, Some char), target when newCurrent = target ->
+         sb.Append(char), newCurrent
+    // there was a character to consume, and we are still not at the target
+    | (newCurrent, Some char), target (*when newCurrent <> target*) ->
+        buildStr (sb.Append(char),newCurrent) target
+    // there was no more input to be consumed, we "finished", jump to target
+    | (_, None), _ -> sb,target
+
+let foldInputPairs (sb:StringBuilder) inputPair =
+    buildStr (sb,fst inputPair) (snd inputPair)
+    |> fst
+
+
+let foldInputPairsPad (sb:StringBuilder) inputPair =
+    buildStr (sb.Append(" "),fst inputPair) (snd inputPair)
+    |> fst
+
+let foldInputPairsHalfPad (sb:StringBuilder,pad) inputPair =
+    buildStr (sb.Append(if pad then " " else "" ),fst inputPair) (snd inputPair)
+    |> fst , not pad
+
+let createNakedString (fromTos:(Input*Input) list) =
+    fromTos
+    |> List.fold foldInputPairs (StringBuilder())
+    |> string
+
+let createLeftPaddedString (fromTos:(Input*Input) list) =
+    fromTos
+    |> List.fold foldInputPairsHalfPad (StringBuilder(),false)
+    |> fst
+    |> (fun (sb:StringBuilder) -> sb.ToString())
+
+let createRightPaddedString (fromTos:(Input*Input) list) =
+    fromTos
+    |> List.fold foldInputPairsHalfPad (StringBuilder(),true)
+    |> fst
+    |> (fun (sb:StringBuilder) -> sb.ToString())
+
+let createPaddedString (fromTos:(Input*Input) list) =
+    fromTos
+    |> List.fold foldInputPairsPad (StringBuilder())
+    |> string
+
+let withWhitespacePermutations testFunc (inputStr:string) =
+  [
+    run (getSpecialChars |>> createNakedString)
+    run (getSpecialChars |>> createPaddedString)
+    run (getSpecialChars |>> createLeftPaddedString)
+    run (getSpecialChars |>> createRightPaddedString)
+  ]
+  |> List.map (fun generator ->
+      generator inputStr
+      |> Expect.wantOk <| "fail"
+      |> fst
+      |> testFunc)
+  |> testList "whiteSpace permutations"
+
+
 [<Tests>]
 let tests =
+  let projectAppDbP = databaseP<ProjectAppColumn> getColumnName getColumnTableName getColumnType
+  let projectAppQueryP = queryP projectAppDbP.ColumnP projectAppDbP.TableP
+  let projectAppBoolExprP = (expressionParsers projectAppDbP.ColumnP)
+
+  let projectAppColumns = getDatabaseColumnCases<ProjectAppColumn>()
+  let userColumns =
+    projectAppColumns
+    |> Seq.filter (function | UserTable _ -> true | _ -> false )
+    |> Seq.map (fun c -> {Col=c;Type=getColumnType c})
+    |> List.ofSeq
+  let projectColumns =
+    projectAppColumns
+    |> Seq.filter (function | ProjectTable _ -> true | _ -> false )
+    |> Seq.map (fun c -> {Col=c;Type=getColumnType c})
+    |> List.ofSeq
+
   let exprParserTester str =
         run (projectAppBoolExprP.FieldExprP |>> binaryFieldExprSolver) str
         |> function | Ok(Ok(Int a),b) -> Ok a | somethingElse -> Error somethingElse
@@ -29,7 +195,7 @@ let tests =
 
   let boolExprParserTester str =
     run projectAppBoolExprP.BoolExprP str
-    |> function | Ok(a,b) -> Ok a | somethingElse -> Error somethingElse
+    |> stripParseResultPos
   
   let boolExprParserEvalTester str =
     result {
@@ -37,6 +203,17 @@ let tests =
       let! evaulationResult = boolExprSolver parsed |> Result.mapError (fun e -> e :> obj)
       return evaulationResult
     }
+
+  let queryParseTester str =
+    run projectAppQueryP str
+    |> stripParseResultPos
+
+  let queryTest inputStr query =
+    let label = sprintf "should parse query string: \"%s\"." inputStr
+    testCase label <| fun _ ->
+      let actual = queryParseTester inputStr
+      let expected = Ok query
+      Expect.equal actual expected ""
 
   let roundtripTest forwardFun backwardFun input =
     let forwardName = funName <@forwardFun@>
@@ -56,18 +233,7 @@ let tests =
         Expect.equal roundTripResult forwardResult "Roundtrip result not equal to first pass."
     ]
 
-  let stringizeData data =
-    match data with
-    | Int i -> string i
-    | Data.Float f -> if f % 1.0 = 0.0 then string f + ".0" else string f
-    | Data.String s -> sprintf "\"%s\"" s
-  
-  let reParametrizeSQLString (str, parameters) =
-    List.fold (fun (str:string) parameter ->
-      str.Replace(stringizeParameterName parameter, stringizeData parameter.ParamValue)
-      ) str parameters
-
-  let exprTestCase inputString expectedResult =
+  let exprTestCaseSingle inputString expectedResult =
     let testFunc = boolExprParserEvalTester
     let forwardsFunc = boolExprParserTester
     let backwardsFunc = stringizeExpression projectAppDB (ctxFactory()) [] >> reParametrizeSQLString >> Ok
@@ -81,6 +247,9 @@ let tests =
         Expect.equal actual expected ""
       roundtripTest forwardsFunc backwardsFunc inputString
     ]
+
+  let exprTestCase inputStr expectedResult =
+    withWhitespacePermutations (fun s -> exprTestCaseSingle s expectedResult) inputStr
 
   testList "SQLParser" [
     testCase "should parse single number" <| fun _ ->
@@ -175,7 +344,9 @@ let tests =
     exprTestCase "\"fisfos\"=\"fisfos\"" true
     exprTestCase "\"a\"<\"b\"" true
     exprTestCase "\"1\"=1 and 1.0 = 1 and 1 = 1.0 and " true
-    //exprTestCase boolExprParserTester "1=1 and false" (BinaryBoolExpr(RelationExpr(Int 1 |> Value,Equals,Int 1 |> Value),And,BoolLiteral false))
+    
+    queryTest "select * from User" {Columns=[];Condition=None}
+    queryTest "select UserName , UserID from User" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=None}
 
     // sample tests for reference
     // the ptestCase function ignores them

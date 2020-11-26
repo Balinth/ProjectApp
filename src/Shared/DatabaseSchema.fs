@@ -1,5 +1,7 @@
 module DatabaseSchema
 
+open SQLAST
+
 type UserTable =
     | UserName
     | UserID
@@ -39,3 +41,22 @@ let getColumnTableName (col : ProjectAppColumn) : string =
     match col with
     | UserTable _ -> "User"
     | ProjectTable _ -> "Project"
+
+let getColumnType col =
+    match col with
+    | UserTable u ->
+        match u with
+        | UserName -> DBString
+        | PrimaryEmail -> DBString
+        | UserNameID -> DBString
+        | UserID -> DBInt
+        | GivenName -> DBString
+        | FamilyName -> DBString
+    | ProjectTable p ->
+        match p with
+        | ProjectName -> DBString
+        | ProjectID -> DBString
+        | StartDate -> DBInt
+        | Code -> DBInt
+
+let getColumn col = {Col=col;Type=getColumnType col}

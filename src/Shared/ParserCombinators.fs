@@ -163,7 +163,6 @@ let printResult labelPrinter errorPrinter result =
         //   sprintf "%*s^%s" 0 "" "test"
         //   sprintf "%*s^%s" 10 "" "test"
         printfn "Line:%i Col:%i Error parsing %s\n%s\n%s" linePos colPos label errorLine failureCaret 
-  
 
 // =============================================
 // Label related
@@ -192,6 +191,16 @@ let setLabel parser newLabel =
 /// infix version of setLabel
 let ( <?> ) = setLabel
 let ( <??> ) parser label = setLabel parser (Inside (label, getLabel parser))
+
+// =============================================
+// Position related
+// =============================================
+
+// returns the actual input state as a parsed result, without consuming characters
+let getPosP =
+    let innerFn input =
+        Ok (input,input)
+    {ParseFn=innerFn;Label=NoLabelSpecified}
 
 // =============================================
 // Standard combinators
@@ -578,4 +587,3 @@ let treeP =
 nodePRef := pstring "node" .>>. treeP .>>. treeP |>> (fun ((a,b),c) -> Node (a, b, c)) <?> "node"
 run treeP "nodeleafnodeleafleaf"
 *)
-
