@@ -152,7 +152,7 @@ let createPaddedString (fromTos:(Input*Input) list) =
     |> List.fold foldInputPairsPad (StringBuilder())
     |> string
 
-let withWhitespacePermutations testFunc (inputStr:string) =
+let withWhitespacePermutations (inputStr:string) =
   [
     run (getSpecialChars |>> createNakedString)
     run (getSpecialChars |>> createPaddedString)
@@ -163,14 +163,14 @@ let withWhitespacePermutations testFunc (inputStr:string) =
       generator inputStr
       |> Expect.wantOk <| "fail"
       |> fst
-      |> testFunc)
-  |> testList "whiteSpace permutations"
+      |> fun s -> s.TrimStart() // most parsers expect the string starts without whitespace
+      )
 
 
 [<Tests>]
 let tests =
   let projectAppDbP = databaseP<ProjectAppColumn> getColumnName getColumnTableName getColumnType
-  let projectAppQueryP = queryP projectAppDbP.ColumnP projectAppDbP.TableP
+  let projectAppQueryP = queryP getColumnType projectAppDbP.ColumnP projectAppDbP.TableP
   let projectAppBoolExprP = (expressionParsers projectAppDbP.ColumnP)
 
   let projectAppColumns = getDatabaseColumnCases<ProjectAppColumn>()
@@ -208,13 +208,6 @@ let tests =
     run projectAppQueryP str
     |> stripParseResultPos
 
-  let queryTest inputStr query =
-    let label = sprintf "should parse query string: \"%s\"." inputStr
-    testCase label <| fun _ ->
-      let actual = queryParseTester inputStr
-      let expected = Ok query
-      Expect.equal actual expected ""
-
   let roundtripTest forwardFun backwardFun input =
     let forwardName = funName <@forwardFun@>
     let backwardName = funName <@backwardFun@>
@@ -233,7 +226,21 @@ let tests =
         Expect.equal roundTripResult forwardResult "Roundtrip result not equal to first pass."
     ]
 
-  let exprTestCaseSingle inputString expectedResult =
+  let triviaTests testFunc inputStr =
+    let originalResult = testFunc inputStr
+    let permutations = withWhitespacePermutations inputStr
+    permutations
+    |> List.map (fun inputPermutation ->
+      let label = sprintf "should parse permutation \"%s\" to the same tree as original \"%s\"" inputPermutation inputStr
+      testCase label (fun _ ->
+        let expected = originalResult |> Expect.wantOk <| "failed at creating the baseline result"
+        let actual = testFunc inputPermutation |> Expect.wantOk <| "failed at creating the permutation based result"
+        Expect.equal actual expected ""  
+        )
+      )
+    |> testList "trivia permutations"
+
+  let exprTestCase inputString expectedResult =
     let testFunc = boolExprParserEvalTester
     let forwardsFunc = boolExprParserTester
     let backwardsFunc = stringizeExpression projectAppDB (ctxFactory()) [] >> reParametrizeSQLString >> Ok
@@ -246,10 +253,22 @@ let tests =
         let actual = testFunc inputString
         Expect.equal actual expected ""
       roundtripTest forwardsFunc backwardsFunc inputString
+      triviaTests forwardsFunc inputString
     ]
 
-  let exprTestCase inputStr expectedResult =
-    withWhitespacePermutations (fun s -> exprTestCaseSingle s expectedResult) inputStr
+
+  let queryTest inputStr query =
+    let forwardsFunc = queryParseTester
+    let backwardsFunc = stringizeSQLQuery projectAppDB >> Result.map reParametrizeSQLString
+    let label = sprintf "should parse query string: \"%s\"." inputStr
+    testList "query" [
+      testCase label <| fun _ ->
+        let actual = queryParseTester inputStr
+        let expected = Ok query
+        Expect.equal actual expected ""
+      roundtripTest forwardsFunc backwardsFunc inputStr
+    ]
+
 
   testList "SQLParser" [
     testCase "should parse single number" <| fun _ ->
@@ -345,8 +364,8 @@ let tests =
     exprTestCase "\"a\"<\"b\"" true
     exprTestCase "\"1\"=1 and 1.0 = 1 and 1 = 1.0 and " true
     
-    queryTest "select * from User" {Columns=[];Condition=None}
-    queryTest "select UserName , UserID from User" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=None}
+    queryTest "select * from User" {Columns=getDatabaseColumns getColumnType;Condition=None}
+    queryTest "select UserName, UserID from User" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=None}
 
     // sample tests for reference
     // the ptestCase function ignores them

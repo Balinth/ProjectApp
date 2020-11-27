@@ -172,7 +172,7 @@ let expressionParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserErr
     
     let boolExprP = fixRecursiveParserLabel boolExprPRef orExprP boolExprP
 
-    {|FieldExprP=spaces >>. fieldExprP; BoolExprP=spaces >>. boolExprP|}
+    {|FieldExprP=fieldExprP; BoolExprP=boolExprP|}
 
 let getDatabaseColumnCases<'c>() =
     FSharpType.GetUnionCases typeof<'c>
@@ -196,42 +196,55 @@ let getDatabaseColumnCases<'c>() =
     )
     |> Seq.cast<'c>
 
-let databaseP<'c> (getColumnName: 'c -> string) (getColumnTableName: 'c -> string) getColumnType=
-    let cases = getDatabaseColumnCases<'c>()
-    let columnP =
+let getDatabaseColumns<'c> getColumnType =
+    getDatabaseColumnCases<'c>()
+    |> List.ofSeq
+    |> List.map (fun columnCase ->
+        {Col=columnCase;Type=getColumnType columnCase})
+
+let databaseP<'c when 'c : comparison> (getColumnName: 'c -> string) (getColumnTableName: 'c -> string) getColumnType=
+    let cases = getDatabaseColumnCases<'c>() |> Seq.sortDescending
+    let tablePMap =
         cases
-        |> Seq.map (fun columnCase -> 
-            let colName = getColumnName columnCase
-            colName
-            |> pstring
-            .>> spaces
-            >>% {Col=columnCase;Type=getColumnType columnCase}
-            <?> (ColumnName colName |> CustomLabel))
-        |> List.ofSeq
-        |> choice
-    let tableP =
-        cases
-        |> Seq.distinctBy getColumnTableName
         |> Seq.map (fun columnCase -> 
             let tableName = getColumnTableName columnCase
             tableName
             |> pstring
             .>> spaces
             >>% {Col=columnCase;Type=getColumnType columnCase}
-            <?> (TableName tableName |> CustomLabel))
+            <?> (TableName tableName |> CustomLabel)
+            |> (fun p -> columnCase, p))
+        |> Map.ofSeq
+    let tableP =
+        tablePMap
+        |> Map.toList
+        |> List.distinctBy (fst >> getColumnTableName)
+        |> List.sortByDescending (fst >> getColumnTableName)
+        |> List.map snd
+        |> choice
+    let columnP =
+        cases
+        |> Seq.map (fun columnCase -> 
+            let colTableP = opt (tablePMap.[columnCase] .>>. pchar '.' |> attemptP)
+            let colName = getColumnName columnCase
+            colTableP
+            >>. pstring colName
+            .>> spaces
+            >>% {Col=columnCase;Type=getColumnType columnCase}
+            <?> (ColumnName colName |> CustomLabel))
         |> List.ofSeq
         |> choice
     {|ColumnP=columnP;TableP=tableP|}
 
-let selectedColumnsP columnP =
-    pchar '*' >>% []
+let selectedColumnsP getColumnType (columnP:Parser<Column<'c>,_,_>) =
+    pchar '*' >>% (getDatabaseColumns<'c> getColumnType |> List.ofSeq)
     <|> (sepBy (columnP .>> spaces) (pchar ',' .>> spaces) )
 
-let queryP columnNameP tableNameP=
+let queryP getColumnType columnNameP tableNameP=
     let exprPs = expressionParsers columnNameP
     let boolExprP = exprPs.BoolExprP
     pstringInsensitive "SELECT"
-    >. selectedColumnsP columnNameP
+    >. selectedColumnsP getColumnType columnNameP
     .> pstringInsensitive "FROM"
     .>. (sepBy (tableNameP .>> spaces) (pchar ',' .>> spaces))
     .>. opt (pstringInsensitive "WHERE"
