@@ -267,6 +267,7 @@ let tests =
         let expected = Ok query
         Expect.equal actual expected ""
       roundtripTest forwardsFunc backwardsFunc inputStr
+      triviaTests forwardsFunc inputStr
     ]
 
 
@@ -366,6 +367,48 @@ let tests =
     
     queryTest "select * from User" {Columns=getDatabaseColumns getColumnType;Condition=None}
     queryTest "select UserName, UserID from User" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=None}
+    queryTest "select UserName, UserID from User where true" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=true|>BoolLiteral|>Some }
+    queryTest
+      "select UserName, UserID from User where UserID = 1"
+        {
+          Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn]
+          Condition=
+            RelationExpr(
+              UserID |> UserTable |> getColumn |> Column,
+              Equals,
+              Value <| Int 1
+            ) |> Some
+        }
+    queryTest
+      "select UserName, UserID from User where (UserID = 1 or UserID = 2) and UserName <> \"\" "
+        {
+          Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn]
+          Condition=
+            BinaryBoolExpr(
+              BracedBoolExpr(
+                BinaryBoolExpr(
+                  RelationExpr(
+                    UserID |> UserTable |> getColumn |> Column,
+                    Equals,
+                    Value <| Int 1
+                  ),
+                  Or,
+                  RelationExpr(
+                    UserID |> UserTable |> getColumn |> Column,
+                    Equals,
+                    Value <| Int 2
+                  )
+                )
+              ),
+              And,
+              RelationExpr(
+                UserName |> UserTable |> getColumn |> Column,
+                NotEquals,
+                Value <| String ""
+              )
+            )
+            |> Some
+        }
 
     // sample tests for reference
     // the ptestCase function ignores them
