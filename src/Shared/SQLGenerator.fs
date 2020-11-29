@@ -122,41 +122,20 @@ let stringizeSQLQuery db (query:QueryStatement<'c>)  =
         | None -> Ok ("", [])
     map2 select where (fun s w -> (s + Environment.NewLine + fst w), snd w)
 
-let getInsertTable (db:DatabaseSchema<'c,'t>) (statement : InsertStatement<'c>) =
-    let tables = List.map ((fun c -> c.Column.Col) >> db.GetTableNameByColumn) statement.Columns |> List.distinct
-    match tables with
-    | [] -> Error [InsertMustHaveColumns]
-    | [table] -> Ok table
-    | list -> Error [InsertMustTargetOneTable list]
+let stringizeSQLInsert db statement =
+    let cols =
+        InsertStatement.cols statement
 
-let ensureDistinctColumns db (statement : InsertStatement<'c>) =
-    let cols = statement.Columns |> List.map (fun c -> c.Column.Col)
-    match cols with
-    | [] -> Error InsertMustHaveColumns
-    | list when list.Length = (List.distinct cols).Length -> Ok list
-    | _ -> InsertMustContainDistinctColumns (cols) |> Error
-
-let createInsertSQL db statement table =
-    statement
-    |> ensureDistinctColumns db
-    |> function
-        | Ok cols ->
-            let columns =
-                cols
-                |> List.map db.GetColumnName
-                |> List.reduce (fun sum c -> sum + "," + c)
-            let colParams =
-                cols
-                |> List.map (db.GetColumnName >> (fun c -> "@" + c))
-                |> List.reduce (fun sum c -> sum + "," + c)
-            let sqlStr = "INSERT INTO " + table + "(" + columns + ") VALUES (" + colParams + ")"
-            Ok (sqlStr, statement.Columns)
-        | Error err -> Error [err]
-
-
-let stringizeSQLInsert db (statement : InsertStatement<'c>) =
-    getInsertTable db statement
-    >>= createInsertSQL db statement
+    let columns =
+        cols
+        |> List.map (fun cv -> db.GetColumnName cv.Column.Col)
+        |> List.reduce (fun sum c -> sum + "," + c)
+    let colParams =
+        cols
+        |> List.map (fun c -> db.GetColumnName c.Column.Col + "@")
+        |> List.reduce (fun sum c -> sum + "," + c)
+    let sqlStr = "INSERT INTO " + (InsertStatement.table statement |> db.GetTableName) + " (" + columns + ") VALUES (" + colParams + ")"
+    Ok (sqlStr, InsertStatement.cols statement)
 
 (*
 let testExpr = RelationExpr (Equals, (UserName |> UserTable |> ProjectAppColumns |> Column), (ProjectName |> ProjectTable |> ProjectAppColumns |>Column))

@@ -19,14 +19,14 @@ type ClaimError =
     | NoSuchClaim of string
     | ClaimHadNullValue of string
 
-type DBError<'c> =
+type DBError<'column,'table> =
     | DBException of Exception
-    | SQLError of SQLAST.ErrorMsg<'c>
+    | SQLError of SQLAST.ErrorMsg<'column,'table>
     | InsertFailed
 
 type APIError =
     | ClaimError of ClaimError
-    | DBError of DBError<ProjectAppCol>
+    | DBError of DBError<ProjectAppCol,ProjectAppTable>
 
 module Route =
     /// Defines how routes are generated on server and mapped from client

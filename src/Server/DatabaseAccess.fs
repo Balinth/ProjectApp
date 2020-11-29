@@ -153,14 +153,14 @@ let executeInsert db (sqlStr, parameters) =
 
 let insertUser (user:UserInfo) =
     let insertValues = [
-        {Column = getColumn <| UserCol UserName; Value=user.UserName |> String}
-        {Column = getColumn <| UserCol UserNameID; Value=user.UserNameID |> String}
-        {Column = getColumn <| UserCol PrimaryEmail; Value=user.UserEmail |> String}
-        {Column = getColumn <| UserCol GivenName; Value=user.GivenName |> String}
-        {Column = getColumn <| UserCol FamilyName; Value=user.FamilyName |> String}
+        UserCol UserName , user.UserName |> String
+        UserCol UserNameID, user.UserNameID |> String
+        UserCol PrimaryEmail, user.UserEmail |> String
+        UserCol GivenName, user.GivenName |> String
+        UserCol FamilyName, user.FamilyName |> String
     ]
-    let insertStatement = {Columns = insertValues}
-    let sqlString = stringizeSQLInsert projectAppDBSchema insertStatement
-    sqlString
+    //let insertStatement =
+    InsertStatement.create projectAppDBSchema UserTable insertValues
+    >>= stringizeSQLInsert projectAppDBSchema
     |> Result.mapError (fun eList -> List.map SQLError eList)
     >>= executeInsert projectAppDBSchema
