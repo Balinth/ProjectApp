@@ -56,6 +56,16 @@ type ErrorMsg<'c> =
     | InsertMustTargetOneTable of string list
     | InsertMustContainDistinctColumns of 'c list
 
+type DatabaseSchema<'column,'table> = {
+    GetColumnTable: 'column -> 'table
+    GetTableName: 'table -> string
+    GetColumnName: 'column -> string
+    GetColumnType: 'column -> DBType
+    } 
+    with
+        member this.GetColumn colCase = {Col=colCase;Type=this.GetColumnType colCase}
+        member this.GetTableNameByColumn colCase = colCase |> this.GetColumnTable |> this.GetTableName
+        member this.GetQualifiedColName colCase = this.GetTableNameByColumn colCase + "." + (this.GetColumnName colCase)
  
 type QueryStatement<'c> = {
     Columns : Column<'c> list

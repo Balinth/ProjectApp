@@ -26,7 +26,7 @@ type DBError<'c> =
 
 type APIError =
     | ClaimError of ClaimError
-    | DBError of DBError<ProjectAppColumn>
+    | DBError of DBError<ProjectAppCol>
 
 module Route =
     /// Defines how routes are generated on server and mapped from client

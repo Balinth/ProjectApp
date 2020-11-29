@@ -6,24 +6,17 @@ open SQLAST
 open DatabaseSchema
 open ResultExtensions
 
-type DB<'c> = {
-    ColumnName : 'c -> string
-    ColumnTableName : 'c -> string
-    ColumnType : 'c -> DBType
-    QualifiedColName : 'c -> string
-}
-
 type Parametrization = {
     ParamName : string * int
     ParamValue : Data
 }
 
-let getTables db cols =
+let getTables (db:DatabaseSchema<'c,'t>) cols =
     match cols with
     | [] -> Error [QueryHasNoColumns]
     | cols ->
         cols
-        |> List.map db.ColumnTableName
+        |> List.map db.GetTableNameByColumn
         |> List.distinct
         |> List.reduce (fun sum t -> sum + ", " + t)
         |> Ok
@@ -65,18 +58,16 @@ let stringizeBoolOperator op =
 let stringizeParameterName param =
     "@" + fst param.ParamName + (snd param.ParamName |> string)
 
-let rec stringizeFieldExpr db ctx parameters expr =
+let rec stringizeFieldExpr (db:DatabaseSchema<'c,'t>) ctx parameters expr =
     match expr with
     | Value v ->
         let param = parametrizeData ctx v
         (stringizeParameterName param,param::parameters)
-    | Column c -> db.QualifiedColName c.Col, parameters
+    | Column c -> db.GetQualifiedColName c.Col, parameters
     | BracedFieldExpr(e) ->
         let innerExpr, innerParameters = stringizeFieldExpr db ctx parameters e
         (sprintf "(%s)" innerExpr, innerParameters)
     | BinaryFieldExpr(l, op, r) ->
-        //match op, r with
-        //| 
         let leftExpr, leftParams = stringizeFieldExpr db ctx parameters l
         let rightExpr, rightParams = stringizeFieldExpr db ctx leftParams r
         (sprintf "%s %s %s" leftExpr (stringizeBinaryNumericOperator op) rightExpr, rightParams)
@@ -88,7 +79,7 @@ let stringizeRelationExpr db ctx parameters op e1 e2 : string*Parametrization li
 
 let stringizeBoolLiteral = function | true -> "TRUE" | fales -> "FALSE"
 
-let rec stringizeExpression (db: DB<'c>) ctx parameters exp : string*Parametrization list =
+let rec stringizeExpression (db: DatabaseSchema<'c,'t>) ctx parameters exp : string*Parametrization list =
     match exp with
     | RelationExpr (op,e1,e2) -> stringizeRelationExpr db ctx parameters e1 op e2
     | Not ex ->
@@ -104,9 +95,9 @@ let rec stringizeExpression (db: DB<'c>) ctx parameters exp : string*Parametriza
         let innerExpr, newParams = stringizeExpression db ctx parameters expr
         (sprintf "(%s)" innerExpr, newParams)
 
-let stringizeSelect db (query:QueryStatement<'c>) =
+let stringizeSelect (db:DatabaseSchema<'c,'t>) (query:QueryStatement<'c>) =
     let cols = List.map (fun c -> c.Col) query.Columns
-    let columnNames = cols |> List.map db.QualifiedColName
+    let columnNames = cols |> List.map db.GetQualifiedColName
     getTables db cols
     >>= (fun tables ->
         "SELECT " + String.Join( ", ", columnNames) + " FROM " + tables
@@ -131,8 +122,8 @@ let stringizeSQLQuery db (query:QueryStatement<'c>)  =
         | None -> Ok ("", [])
     map2 select where (fun s w -> (s + Environment.NewLine + fst w), snd w)
 
-let getInsertTable db (statement : InsertStatement<'c>) =
-    let tables = List.map ((fun c -> c.Column.Col) >> db.ColumnTableName) statement.Columns |> List.distinct
+let getInsertTable (db:DatabaseSchema<'c,'t>) (statement : InsertStatement<'c>) =
+    let tables = List.map ((fun c -> c.Column.Col) >> db.GetTableNameByColumn) statement.Columns |> List.distinct
     match tables with
     | [] -> Error [InsertMustHaveColumns]
     | [table] -> Ok table
@@ -152,11 +143,11 @@ let createInsertSQL db statement table =
         | Ok cols ->
             let columns =
                 cols
-                |> List.map db.ColumnName
+                |> List.map db.GetColumnName
                 |> List.reduce (fun sum c -> sum + "," + c)
             let colParams =
                 cols
-                |> List.map (db.ColumnName >> (fun c -> "@" + c))
+                |> List.map (db.GetColumnName >> (fun c -> "@" + c))
                 |> List.reduce (fun sum c -> sum + "," + c)
             let sqlStr = "INSERT INTO " + table + "(" + columns + ") VALUES (" + colParams + ")"
             Ok (sqlStr, statement.Columns)
@@ -167,12 +158,6 @@ let stringizeSQLInsert db (statement : InsertStatement<'c>) =
     getInsertTable db statement
     >>= createInsertSQL db statement
 
-
-let ProjectAppColumns col = { Col = col; Type = getColumnType col }
-
-let qualifiedColName col = getColumnTableName col + "." + getColumnName col
-
-let projectAppDB = {ColumnName = getColumnName; ColumnTableName = getColumnTableName; ColumnType = getColumnType; QualifiedColName = qualifiedColName}
 (*
 let testExpr = RelationExpr (Equals, (UserName |> UserTable |> ProjectAppColumns |> Column), (ProjectName |> ProjectTable |> ProjectAppColumns |>Column))
 let testListExpr = ListExpr (And,[testExpr;testExpr])

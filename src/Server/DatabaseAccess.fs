@@ -84,7 +84,7 @@ let parametersBuilder parameters : DynamicParameters =
 let deconstructInsertValue db parameter =
     let parameterType, parameterValue = deconstructDbData parameter.Value
     (
-        "@" + (db.ColumnName parameter.Column.Col),
+        "@" + (db.GetColumnName parameter.Column.Col),
         parameterValue,
         Nullable parameterType
     )
@@ -126,19 +126,19 @@ let executeQueryTyped<'T> (sqlStr, parameters) =
 
 let getUserResult userNameID =
     let expr = RelationExpr (
-                UserNameID |> UserTable |> ProjectAppColumns |> Column,
+                UserNameID |> UserCol |> getColumn |> Column,
                 Equals,
                 userNameID |> String |> Value
                 )
     let queryColumns = [
-        ProjectAppColumns <| UserTable UserName
-        ProjectAppColumns <| UserTable UserNameID
-        ProjectAppColumns <| UserTable PrimaryEmail
-        ProjectAppColumns <| UserTable GivenName
-        ProjectAppColumns <| UserTable FamilyName
+        UserCol UserName        |> getColumn
+        UserCol UserNameID      |> getColumn
+        UserCol PrimaryEmail    |> getColumn
+        UserCol GivenName       |> getColumn
+        UserCol FamilyName      |> getColumn
     ]
     let query = {Columns=queryColumns; Condition = Some expr}
-    let sqlStr = stringizeSQLQuery projectAppDB query
+    let sqlStr = stringizeSQLQuery projectAppDBSchema query
     sqlStr
     |> Result.mapError (fun eList -> List.map SQLError eList)
     >>= executeQueryTyped<DbUser>
@@ -153,14 +153,14 @@ let executeInsert db (sqlStr, parameters) =
 
 let insertUser (user:UserInfo) =
     let insertValues = [
-        {Column = ProjectAppColumns <| UserTable UserName; Value=user.UserName |> String}
-        {Column = ProjectAppColumns <| UserTable UserNameID; Value=user.UserNameID |> String}
-        {Column = ProjectAppColumns <| UserTable PrimaryEmail; Value=user.UserEmail |> String}
-        {Column = ProjectAppColumns <| UserTable GivenName; Value=user.GivenName |> String}
-        {Column = ProjectAppColumns <| UserTable FamilyName; Value=user.FamilyName |> String}
+        {Column = getColumn <| UserCol UserName; Value=user.UserName |> String}
+        {Column = getColumn <| UserCol UserNameID; Value=user.UserNameID |> String}
+        {Column = getColumn <| UserCol PrimaryEmail; Value=user.UserEmail |> String}
+        {Column = getColumn <| UserCol GivenName; Value=user.GivenName |> String}
+        {Column = getColumn <| UserCol FamilyName; Value=user.FamilyName |> String}
     ]
     let insertStatement = {Columns = insertValues}
-    let sqlString = stringizeSQLInsert projectAppDB insertStatement
+    let sqlString = stringizeSQLInsert projectAppDBSchema insertStatement
     sqlString
     |> Result.mapError (fun eList -> List.map SQLError eList)
-    >>= executeInsert projectAppDB
+    >>= executeInsert projectAppDBSchema

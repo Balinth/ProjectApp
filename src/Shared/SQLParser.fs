@@ -186,12 +186,21 @@ let getDatabaseColumnCases<'c>() =
                         let column = FSharpValue.MakeUnion(columnCase, Array.zeroCreate(0))
                         FSharpValue.MakeUnion(tableCase, [|column|])
                     else
-                        sprintf "Column cases are expected to not have any fields! \n Could not initialize columnParser for %s column of %s table of %s database" columnCase.Name columnCase.DeclaringType.Name tableCase.DeclaringType.Name
+                        sprintf
+                            "Column cases are expected to not have any fields!
+                            Could not initialize columnParser for %s column of %s table of %s database"
+                            columnCase.Name
+                            columnCase.DeclaringType.Name
+                            tableCase.DeclaringType.Name
                         |> failwith
                 )
             )
         | _ ->
-            sprintf "Table cases are expected to have a single field of the table discriminated union they represent in the database! \n Could not initialize columnParser for %s table of %s database" tableCase.Name tableCase.DeclaringType.Name
+            sprintf
+                "Table cases are expected to have a single field of the table discriminated union they represent in the database!
+                Could not initialize columnParser for %s table of %s database"
+                tableCase.Name
+                tableCase.DeclaringType.Name
             |> failwith
     )
     |> Seq.cast<'c>
@@ -202,51 +211,57 @@ let getDatabaseColumns<'c> getColumnType =
     |> List.map (fun columnCase ->
         {Col=columnCase;Type=getColumnType columnCase})
 
-let databaseP<'c when 'c : comparison> (getColumnName: 'c -> string) (getColumnTableName: 'c -> string) getColumnType=
+type DatabaseParser<'c,'t,'parserLabel,'parserError> = {
+    ColumnNameP : Parser<Column<'c>,'parserLabel,'parserError>
+    TableNameP : Parser<'t,'parserLabel,'parserError>
+    DatabaseSchema : DatabaseSchema<'c,'t>
+}
+
+let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
     let cases = getDatabaseColumnCases<'c>() |> Seq.sortDescending
     let tablePMap =
         cases
-        |> Seq.map (fun columnCase -> 
-            let tableName = getColumnTableName columnCase
+        |> Seq.map (fun (columnCase:'c) -> 
+            let tableName = db.GetTableNameByColumn columnCase
             tableName
             |> pstring
             .>> spaces
-            >>% {Col=columnCase;Type=getColumnType columnCase}
+            >>% db.GetColumnTable columnCase
             <?> (TableName tableName |> CustomLabel)
             |> (fun p -> columnCase, p))
         |> Map.ofSeq
     let tableP =
         tablePMap
         |> Map.toList
-        |> List.distinctBy (fst >> getColumnTableName)
-        |> List.sortByDescending (fst >> getColumnTableName)
+        |> List.distinctBy (fst >> db.GetTableNameByColumn)
+        |> List.sortByDescending (fst >> db.GetTableNameByColumn)
         |> List.map snd
         |> choice
     let columnP =
         cases
         |> Seq.map (fun columnCase -> 
             let colTableP = opt (tablePMap.[columnCase] .>>. pchar '.' |> attemptP)
-            let colName = getColumnName columnCase
+            let colName = db.GetColumnName columnCase
             colTableP
             >>. pstring colName
             .>> spaces
-            >>% {Col=columnCase;Type=getColumnType columnCase}
+            >>% db.GetColumn columnCase
             <?> (ColumnName colName |> CustomLabel))
         |> List.ofSeq
         |> choice
-    {|ColumnP=columnP;TableP=tableP|}
+    {ColumnNameP=columnP;TableNameP=tableP;DatabaseSchema=db}
 
-let selectedColumnsP getColumnType (columnP:Parser<Column<'c>,_,_>) =
-    pchar '*' >>% (getDatabaseColumns<'c> getColumnType |> List.ofSeq)
-    <|> (sepBy (columnP .>> spaces) (pchar ',' .>> spaces) )
+let selectedColumnsP dbParser =
+    pchar '*' >>% (getDatabaseColumns<'c> dbParser.DatabaseSchema.GetColumnType |> List.ofSeq)
+    <|> (sepBy (dbParser.ColumnNameP .>> spaces) (pchar ',' .>> spaces) )
 
-let queryP getColumnType columnNameP tableNameP=
-    let exprPs = expressionParsers columnNameP
+let queryP databaseParser =
+    let exprPs = expressionParsers databaseParser.ColumnNameP
     let boolExprP = exprPs.BoolExprP
     pstringInsensitive "SELECT"
-    >. selectedColumnsP getColumnType columnNameP
+    >. selectedColumnsP databaseParser
     .> pstringInsensitive "FROM"
-    .>. (sepBy (tableNameP .>> spaces) (pchar ',' .>> spaces))
+    .>. (sepBy (databaseParser.TableNameP .>> spaces) (pchar ',' .>> spaces))
     .>. opt (pstringInsensitive "WHERE"
         >. boolExprP)
     |>> fun ((columns, tables), condition) ->

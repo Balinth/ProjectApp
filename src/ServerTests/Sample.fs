@@ -169,19 +169,19 @@ let withWhitespacePermutations (inputStr:string) =
 
 [<Tests>]
 let tests =
-  let projectAppDbP = databaseP<ProjectAppColumn> getColumnName getColumnTableName getColumnType
-  let projectAppQueryP = queryP getColumnType projectAppDbP.ColumnP projectAppDbP.TableP
-  let projectAppBoolExprP = (expressionParsers projectAppDbP.ColumnP)
+  let projectAppDBP = databaseP DatabaseSchema.projectAppDBSchema
+  let projectAppQueryP = queryP projectAppDBP
+  let projectAppBoolExprP = (expressionParsers projectAppDBP.ColumnNameP)
 
-  let projectAppColumns = getDatabaseColumnCases<ProjectAppColumn>()
+  let projectAppColumns = getDatabaseColumnCases<ProjectAppCol>()
   let userColumns =
     projectAppColumns
-    |> Seq.filter (function | UserTable _ -> true | _ -> false )
+    |> Seq.filter (function | UserCol _ -> true | _ -> false )
     |> Seq.map (fun c -> {Col=c;Type=getColumnType c})
     |> List.ofSeq
   let projectColumns =
     projectAppColumns
-    |> Seq.filter (function | ProjectTable _ -> true | _ -> false )
+    |> Seq.filter (function | ProjectTableCol _ -> true | _ -> false )
     |> Seq.map (fun c -> {Col=c;Type=getColumnType c})
     |> List.ofSeq
 
@@ -243,7 +243,7 @@ let tests =
   let exprTestCase inputString expectedResult =
     let testFunc = boolExprParserEvalTester
     let forwardsFunc = boolExprParserTester
-    let backwardsFunc = stringizeExpression projectAppDB (ctxFactory()) [] >> reParametrizeSQLString >> Ok
+    let backwardsFunc = stringizeExpression projectAppDBSchema (ctxFactory()) [] >> reParametrizeSQLString >> Ok
     let testFuncName = funName <@testFunc@>
     let caseLabel =
       sprintf "should parse \"%s\" with %s to the expected result." inputString testFuncName
@@ -259,7 +259,7 @@ let tests =
 
   let queryTest inputStr query =
     let forwardsFunc = queryParseTester
-    let backwardsFunc = stringizeSQLQuery projectAppDB >> Result.map reParametrizeSQLString
+    let backwardsFunc = stringizeSQLQuery projectAppDBSchema >> Result.map reParametrizeSQLString
     let label = sprintf "should parse query string: \"%s\"." inputStr
     testList "query" [
       testCase label <| fun _ ->
@@ -366,35 +366,39 @@ let tests =
     exprTestCase "\"1\"=1 and 1.0 = 1 and 1 = 1.0 and " true
     
     queryTest "select * from User" {Columns=getDatabaseColumns getColumnType;Condition=None}
-    queryTest "select UserName, UserID from User" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=None}
-    queryTest "select UserName, UserID from User where true" {Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn];Condition=true|>BoolLiteral|>Some }
+    queryTest "select UserName, UserID from User" {Columns=[UserName|> UserCol |> getColumn; UserID |> UserCol |> getColumn];Condition=None}
+    queryTest "select UserName, UserID from User where true" {Columns=[UserName|> UserCol |> getColumn; UserID |> UserCol |> getColumn];Condition=true|>BoolLiteral|>Some }
     queryTest
       "select UserName, UserID from User where UserID = 1"
         {
-          Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn]
+          Columns=[UserName|> UserCol |> getColumn; UserID |> UserCol |> getColumn]
           Condition=
             RelationExpr(
-              UserID |> UserTable |> getColumn |> Column,
+              UserID |> UserCol |> getColumn |> Column,
               Equals,
               Value <| Int 1
             ) |> Some
         }
     queryTest
-      "select UserName, UserID from User where (UserID = 1 or UserID = 2) and UserName <> \"\" "
+      "select UserName, UserID from User where (UserID = 1 + 2 or UserID = 2) and UserName <> \"\" "
         {
-          Columns=[UserName|> UserTable |> getColumn; UserID |> UserTable |> getColumn]
+          Columns=[UserName|> UserCol |> getColumn; UserID |> UserCol |> getColumn]
           Condition=
             BinaryBoolExpr(
               BracedBoolExpr(
                 BinaryBoolExpr(
                   RelationExpr(
-                    UserID |> UserTable |> getColumn |> Column,
+                    UserID |> UserCol |> getColumn |> Column,
                     Equals,
-                    Value <| Int 1
+                    BinaryFieldExpr(
+                      Value <| Int 1,
+                      Add,
+                      Value <| Int 2
+                    )
                   ),
                   Or,
                   RelationExpr(
-                    UserID |> UserTable |> getColumn |> Column,
+                    UserID |> UserCol |> getColumn |> Column,
                     Equals,
                     Value <| Int 2
                   )
@@ -402,7 +406,7 @@ let tests =
               ),
               And,
               RelationExpr(
-                UserName |> UserTable |> getColumn |> Column,
+                UserName |> UserCol |> getColumn |> Column,
                 NotEquals,
                 Value <| String ""
               )

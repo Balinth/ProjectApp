@@ -120,7 +120,8 @@ type ParserPosition = {
     CharIndex : int
     }
 
-type ParserResult<'a,'parserLabel,'parserError> = FSharp.Core.Result<'a * Input,'parserLabel*'parserError*ParserPosition>
+type ParserResult<'a,'parserLabel,'parserError> =
+    FSharp.Core.Result<'a * Input,'parserLabel*'parserError*ParserPosition>
 
 /// A Parser structure has a parsing function & label
 type Parser<'a,'parserLabel,'parserError> = {
@@ -162,7 +163,8 @@ let printResult labelPrinter errorPrinter result =
         // examples of formatting
         //   sprintf "%*s^%s" 0 "" "test"
         //   sprintf "%*s^%s" 10 "" "test"
-        printfn "Line:%i Col:%i Error parsing %s\n%s\n%s" linePos colPos label errorLine failureCaret 
+        printfn "Line:%i Col:%i Error parsing %s\n%s\n%s"
+            linePos colPos label errorLine failureCaret 
 
 // =============================================
 // Label related

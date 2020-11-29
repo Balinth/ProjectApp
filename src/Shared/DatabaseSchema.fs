@@ -2,7 +2,11 @@ module DatabaseSchema
 
 open SQLAST
 
-type UserTable =
+type ProjectAppTable =
+    | UserTable
+    | ProjectTable
+
+type UserCol =
     | UserName
     | UserID
     | GivenName
@@ -10,19 +14,29 @@ type UserTable =
     | PrimaryEmail
     | UserNameID
 
-type ProjectTable =
+type ProjectCol =
     | ProjectName
     | ProjectID
     | StartDate
     | Code
 
-type ProjectAppColumn =
-    | UserTable of UserTable
-    | ProjectTable of ProjectTable
+type ProjectAppCol =
+    | UserCol of UserCol
+    | ProjectTableCol of ProjectCol
 
-let getColumnName (col : ProjectAppColumn) : string =
+let getColumnTable col =
     match col with
-    | UserTable u ->
+    | UserCol _ -> ProjectAppTable.UserTable
+    | ProjectTableCol _ -> ProjectAppTable.ProjectTable
+
+let getTableName table : string =
+    match table with
+    | ProjectAppTable.UserTable _ -> "User"
+    | ProjectAppTable.ProjectTable _ -> "Project"
+
+let getColumnName (col : ProjectAppCol) : string =
+    match col with
+    | UserCol u ->
         match u with
         | UserName -> "UserName"
         | PrimaryEmail -> "PrimaryEmail"
@@ -30,21 +44,16 @@ let getColumnName (col : ProjectAppColumn) : string =
         | UserID -> "UserID"
         | GivenName -> "GivenName"
         | FamilyName -> "FamilyName"
-    | ProjectTable p ->
+    | ProjectTableCol p ->
         match p with
         | ProjectName -> "ProjectName"
         | ProjectID -> "ProjectID"
         | StartDate -> "StartDate"
         | Code -> "Code"
 
-let getColumnTableName (col : ProjectAppColumn) : string =
-    match col with
-    | UserTable _ -> "User"
-    | ProjectTable _ -> "Project"
-
 let getColumnType col =
     match col with
-    | UserTable u ->
+    | UserCol u ->
         match u with
         | UserName -> DBString
         | PrimaryEmail -> DBString
@@ -52,7 +61,7 @@ let getColumnType col =
         | UserID -> DBInt
         | GivenName -> DBString
         | FamilyName -> DBString
-    | ProjectTable p ->
+    | ProjectTableCol p ->
         match p with
         | ProjectName -> DBString
         | ProjectID -> DBString
@@ -60,3 +69,10 @@ let getColumnType col =
         | Code -> DBInt
 
 let getColumn col = {Col=col;Type=getColumnType col}
+
+let projectAppDBSchema = {
+    GetColumnTable = getColumnTable
+    GetTableName = getTableName
+    GetColumnName = getColumnName
+    GetColumnType = getColumnType
+}
