@@ -20,7 +20,7 @@ I explore a critical problem with my original vision of combinators with paramet
 A rundown of my core idea for the domain model of the webapp, and how can it be implemented with the tools a functional programming language provides.
 ## 6. [SQL AST: parsing](sql_ast_parse.md)
 Notes about parsing this AST with parser combinators, and unparsing it into sql command strings to drive our database.
-## 7. [Testing with a functional frist mindset](testing_functional.md)
+## 7. [Testing with a functional first mindset](testing_functional.md)
 Quick glance at unit testing with the function combinator design pattern.
 ## 8. Shared web API definition - TODO
 How does code sharing work, and how it leads to frictionless and less error prone communication between front- and back-end.
