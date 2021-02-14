@@ -251,6 +251,34 @@ let bindP f p =
             runOnInput p2 remainingInput
     {ParseFn=innerFn; Label=getLabel p}
 
+let mapErrorP f p =
+    let innerFn input =
+        let result1 = runOnInput p input 
+        match result1 with
+        | Error (label,err,pos) -> 
+            // apply f to get the new error msg
+            let newErr = f err
+            // run parser with remaining input
+            Error(label,newErr,pos)
+        | Ok (value1,remainingInput) ->
+            // return successfull value from parser1
+            Ok (value1,remainingInput) 
+    {ParseFn=innerFn; Label=getLabel p}
+
+let mapLabel f p =
+    let innerFn input =
+        let result1 = runOnInput p input
+        match result1 with
+        | Ok (value1,remainingInput) ->
+            // return successfull value from parser1
+            Ok (value1,remainingInput) 
+        | Error (label,err,pos) -> 
+            // apply f to get the new error msg
+            let newLabel = f label
+            // run parser with remaining input
+            Error(label,err,pos)
+    {ParseFn=innerFn; Label=getLabel p}
+
 /// Infix version of bindP
 let ( >>= ) p f = bindP f p
 

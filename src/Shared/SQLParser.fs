@@ -11,15 +11,15 @@ module SQLParser
 open SQLAST
 open DatabaseSchema
 open ParserCombinator
+open ProjectSpecificLabels
 open Microsoft.FSharp.Reflection
 open ResultExtensions
-open ProjectSpecificLabels
 
 let unescapedChar =
     satisfy (fun c -> c <> '\\' && c <> '\"' && c <> '\'') NoLabelSpecified
 
 let escapedChar =
-    [ 
+    [
     // (stringToMatch, resultChar)
     ("\\\"",'\"')      // quote
     ("\\\\",'\\')      // reverse solidus
@@ -31,9 +31,9 @@ let escapedChar =
     ("\\t",'\t')       // tab
     ("\\%", '%')       // % char, for LIKE clauses % is a wildcard
     ("\\_", '_')       // _ char, for LIKE clauses _ is a wildcard
-    ] 
+    ]
     // convert each pair into a parser
-    |> List.map (fun (toMatch,result) -> 
+    |> List.map (fun (toMatch,result) ->
         pstring toMatch |>> (fun r -> result))
     // and combine them into one
     |> choice
@@ -127,18 +127,18 @@ let expressionParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserErr
         columnP |>> FieldExpr.Column
         <|> (dataLiteralP |>> FieldExpr.Value)
         <|> (braceP fieldExprP |>> FieldExpr.BracedFieldExpr)
-    
+
     let originalTermP =  termP
 
     let binaryExprRebuilder exprType (firstTerm, extraTerms) =
         List.fold (fun expr (op, nextExpr) ->
             exprType (expr,op,nextExpr)) firstTerm extraTerms
-    
+
     let mulDivP =
         termP .>.
         (mulDivOpP .>. termP |> many)
         |>> binaryExprRebuilder BinaryFieldExpr
-    
+
     let addSubP =
         mulDivP .>.
         (addSubOpP .>. mulDivP |> many)
@@ -148,7 +148,7 @@ let expressionParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserErr
         parserRef := parserRefImpl
         rootParser //<?> (getLabel parserRefImpl)
     let fieldExprP = fixRecursiveParserLabel fieldExprPRef addSubP fieldExprP
-    
+
 
     let boolExprP, boolExprPRef = createParserForwardedToRef<BoolExpr<'c>,BasicParserError>()
     let notBoolExpr = pstringInsensitive "not" >.>. boolExprP |>> BoolExpr.Not
@@ -164,12 +164,12 @@ let expressionParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserErr
         termP .>>.
         (spaces >>. andOpP .>.>. termP |> many)
         |>> binaryExprRebuilder BinaryBoolExpr
-        
+
     let orExprP =
         andExprP .>>.
         (spaces  >>. orOpP .>.>. andExprP |> many)
         |>> binaryExprRebuilder BinaryBoolExpr
-    
+
     let boolExprP = fixRecursiveParserLabel boolExprPRef orExprP boolExprP
 
     {|FieldExprP=fieldExprP; BoolExprP=boolExprP|}
@@ -221,7 +221,7 @@ let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
     let cases = getDatabaseColumnCases<'c>() |> Seq.sortDescending
     let tablePMap =
         cases
-        |> Seq.map (fun (columnCase:'c) -> 
+        |> Seq.map (fun (columnCase:'c) ->
             let tableName = db.GetTableNameByColumn columnCase
             tableName
             |> pstring
@@ -239,7 +239,7 @@ let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
         |> choice
     let columnP =
         cases
-        |> Seq.map (fun columnCase -> 
+        |> Seq.map (fun columnCase ->
             let colTableP = opt (tablePMap.[columnCase] .>>. pchar '.' |> attemptP)
             let colName = db.GetColumnName columnCase
             colTableP
@@ -266,3 +266,34 @@ let queryP databaseParser =
         >. boolExprP)
     |>> fun ((columns, tables), condition) ->
         {Columns = columns; Condition = condition}
+(*
+
+let insertP databaseParser =
+    let columnListP =
+        sepBy1 databaseParser.ColumnNameP (pchar ',')
+    let valueListP =
+        sepBy1 dataLiteralP (pchar ',')
+    pstringInsensitive "instert into"
+    >.>. databaseParser.TableNameP
+    .>. braceP columnListP
+    .>.> pstringInsensitive "values"
+    .>. braceP valueListP
+    .> pchar ';'
+    |> bindP (fun ((table,columns),data) ->
+        let tablesOfColumns =
+            columns
+            |> List.map (fun c -> databaseParser.DatabaseSchema.GetColumnTable c.Col)
+            |> List.distinct
+        match tablesOfColumns, columns, data with
+        // the only OK case...
+        | [singleTable], cols, data when cols.Length = data.Length && singleTable = table ->
+            returnP NoLabelSpecified ()
+        // all the ways this can go wrong
+        | nonSingleTable, _, _ ->
+
+
+
+
+        )
+
+*)
