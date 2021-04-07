@@ -1,19 +1,19 @@
 module SQLParser
 
 #if INTERACTIVE
+#load "ResultExtensions.fs"
 #load "SQLAST.fs"
 #load "SQLParserLabels.fs"
 #load "ParserCombinators.fs"
 #load "DatabaseSchema.fs"
-#load "ResultExtensions.fs"
 #endif
 
+open ResultExtensions
 open SQLAST
 open DatabaseSchema
 open ParserCombinator
 open ProjectSpecificLabels
 open Microsoft.FSharp.Reflection
-open ResultExtensions
 
 let unescapedChar =
     satisfy (fun c -> c <> '\\' && c <> '\"' && c <> '\'') NoLabelSpecified

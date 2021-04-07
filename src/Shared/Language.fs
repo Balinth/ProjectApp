@@ -31,8 +31,11 @@ let englishString mlString =
     | ValidationError err ->
         match err with
         | NoWhitespace -> "No whitespaces!"
-        | NotEmpty -> "Not empty!"
         | MinLength l -> "Min length: " + string l
+        | NoSpecialChar -> "Can't contain special characters!"
+        | LacksNumericChar -> "Needs at least one numeric character"
+        | LacksUpperChar -> "Needs at least one upper case character"
+        | LacksLowerChar -> "Needs at least one lower case character"
 
 let hungarianString mlString =
     match mlString with
@@ -47,8 +50,11 @@ let hungarianString mlString =
     | ValidationError err ->
         match err with
         | NoWhitespace -> "Nem lehet szóköz!"
-        | NotEmpty -> "Nem lehet üres!"
         | MinLength l -> "Minimum hossz: " + string l
+        | NoSpecialChar -> "Nem tartalmazhat speciális karaktert"
+        | LacksNumericChar -> "Tartalmaznia kell minimum egy szám karaktert."
+        | LacksUpperChar -> "Tartalmaznia kell minimum egy nagy betűt."
+        | LacksLowerChar -> "Tartalmaznia kell minimum egy kis betűt."
 
 let getMLString lang str =
     match lang with

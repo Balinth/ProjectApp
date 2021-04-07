@@ -1,6 +1,8 @@
 module Validation
 
-let plus addSuccess addFailure switch1 switch2 x = 
+open System
+
+let plus addSuccess addFailure switch1 switch2 x =
     match (switch1 x),(switch2 x) with
     | Ok s1,Ok s2 -> Ok (addSuccess s1 s2)
     | Error f1,Ok _  -> Error f1
@@ -13,26 +15,53 @@ let (&&&) a b =
 
 type ValidationError =
     | NoWhitespace
-    | NotEmpty
+    | NoSpecialChar
     | MinLength of int
+    | LacksNumericChar
+    | LacksUpperChar
+    | LacksLowerChar
+
 let validateNoWhitespace s =
     match s with
     | (s:string) when s.Contains(" ") || s.Contains("\t") || s.Contains("\v")|| s.Contains("\n")|| s.Contains("\r") ->
         Error [NoWhitespace]
     | _ -> Ok s
-let validateNonZeroLength (s:string) =
-    match s with
-    | s when s.Length = 0 -> Error [NotEmpty]
-    | _ -> Ok s
 let validateMinLength l (s:string) =
     match s with
     | s when s.Length < l -> Error [MinLength l]
     | _ -> Ok s
+let validateHasNumericChar s =
+    match s with
+    | (s:string) when s.ToCharArray() |> Seq.exists Char.IsDigit -> Ok s
+    | _ -> Error [LacksNumericChar]
+let validateHasUpperChar s =
+    match s with
+    | (s:string) when s.ToCharArray() |> Seq.exists Char.IsUpper -> Ok s
+    | _ -> Error [LacksUpperChar]
+let validateHasLowerChar s =
+    match s with
+    | (s:string) when s.ToCharArray() |> Seq.exists Char.IsLower -> Ok s
+    | _ -> Error [LacksLowerChar]
+let validateNoSpecialChar s =
+    match s with
+    | (s:string) when s.ToCharArray() |> Seq.exists (fun c -> Char.IsDigit c || Char.IsDigit c) -> Error [NoSpecialChar]
+    | _ -> Ok s
+
+
 let validateUsername s =
-    s 
-    |>( validateNonZeroLength
-    &&& validateNoWhitespace)
-let validatePassword s =
+    let minUsernameLength = 4
     s
-    |>( validateMinLength 8
-    &&& validateNoWhitespace)
+    |>( validateMinLength minUsernameLength
+    &&& validateNoWhitespace
+    &&& validateNoSpecialChar)
+
+let validatePassword s =
+    let minPwLength = 8
+    s
+    |>( validateMinLength minPwLength
+    &&& validateNoWhitespace
+    &&& validateHasNumericChar
+    &&& validateHasUpperChar
+    &&& validateHasLowerChar)
+
+

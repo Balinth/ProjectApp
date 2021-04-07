@@ -2,17 +2,14 @@ module DatabaseSchema
 
 open SQLAST
 
-type ProjectAppTable =
-    | UserTable
-    | ProjectTable
+// fsharplint:disable TypePrefixing
 
-type UserCol =
-    | UserName
-    | UserID
-    | GivenName
-    | FamilyName
-    | PrimaryEmail
-    | UserNameID
+type ProjectAppTable =
+    | ProjectTable
+    | PhaseTable
+    | UserTable
+    | ForFabricationTable
+    | LocalAuthenticationTable
 
 type ProjectCol =
     | ProjectName
@@ -20,19 +17,55 @@ type ProjectCol =
     | StartDate
     | Code
 
+type PhaseCol =
+    | PhaseID
+    | PhaseName
+    | Revision
+    | Project_ID
+    | ForFabrication_ID
+
+type UserCol =
+    | UserID
+    | UserName
+    | GivenName
+    | FamilyName
+    | PrimaryEmail
+    | UserNameID
+
+type ForFabricationCol =
+    | ForFabricationID
+    | SenderUser_ID
+    | EmailOriginal
+    | SentDate
+
+type LocalAuthenticationCol =
+    | LocalAuthID
+    | PasswordHash
+    | Salt
+    | User_ID
+
 type ProjectAppCol =
-    | UserCol of UserCol
     | ProjectTableCol of ProjectCol
+    | PhaseCol of PhaseCol
+    | UserCol of UserCol
+    | ForFabricationCol of ForFabricationCol
+    | LocalAuthenticationCol of LocalAuthenticationCol
 
 let getColumnTable col =
     match col with
-    | UserCol _ -> ProjectAppTable.UserTable
-    | ProjectTableCol _ -> ProjectAppTable.ProjectTable
+    | ProjectTableCol _ -> ProjectTable
+    | PhaseCol(_) -> PhaseTable
+    | UserCol _ -> UserTable
+    | ForFabricationCol(_) -> ForFabricationTable
+    | LocalAuthenticationCol(_) -> LocalAuthenticationTable
 
 let getTableName table : string =
     match table with
-    | ProjectAppTable.UserTable _ -> "User"
-    | ProjectAppTable.ProjectTable _ -> "Project"
+    | UserTable _ -> "User"
+    | ProjectTable _ -> "Project"
+    | PhaseTable -> "Phase"
+    | ForFabricationTable -> "ForFabrication"
+    | LocalAuthenticationTable -> "LocalAuthentication"
 
 let getColumnName (col : ProjectAppCol) : string =
     match col with
@@ -50,23 +83,61 @@ let getColumnName (col : ProjectAppCol) : string =
         | ProjectID -> "ProjectID"
         | StartDate -> "StartDate"
         | Code -> "Code"
+    | PhaseCol p ->
+        match p with
+        | PhaseID -> "PhaseID"
+        | PhaseName -> "PhaseName"
+        | Revision -> "Revision"
+        | Project_ID -> "Project_ID"
+        | ForFabrication_ID -> "ForFabrication_ID"
+    | ForFabricationCol forFabCol ->
+        match forFabCol with
+        | ForFabricationID -> "ForFabricationID"
+        | SenderUser_ID -> "SenderUser_ID"
+        | EmailOriginal -> "EmailOriginal"
+        | SentDate -> "SentDate"
+    | LocalAuthenticationCol localAuthCol ->
+        match localAuthCol with
+        | LocalAuthID -> "LocalAuthID"
+        | PasswordHash -> "PasswordHash"
+        | User_ID -> "User_ID"
+        | Salt -> "Salt"
 
 let getColumnType col =
     match col with
-    | UserCol u ->
-        match u with
+    | UserCol userCol ->
+        match userCol with
         | UserName -> DBString
         | PrimaryEmail -> DBString
         | UserNameID -> DBString
         | UserID -> DBInt
         | GivenName -> DBString
         | FamilyName -> DBString
-    | ProjectTableCol p ->
-        match p with
+    | ProjectTableCol projectCol ->
+        match projectCol with
         | ProjectName -> DBString
-        | ProjectID -> DBString
+        | ProjectID -> DBInt
         | StartDate -> DBInt
-        | Code -> DBInt
+        | Code -> DBString
+    | PhaseCol phaseCol ->
+        match phaseCol with
+        | PhaseID -> DBInt
+        | PhaseName -> DBString
+        | Revision -> DBString
+        | Project_ID -> DBInt
+        | ForFabrication_ID -> DBInt
+    | ForFabricationCol forFabCol ->
+        match forFabCol with
+        | ForFabricationID -> DBInt
+        | SenderUser_ID -> DBInt
+        | EmailOriginal -> DBString
+        | SentDate -> DBInt
+    | LocalAuthenticationCol localAuthCol ->
+        match localAuthCol with
+        | User_ID -> DBInt
+        | LocalAuthID -> DBInt
+        | PasswordHash -> DBString
+        | Salt -> DBString
 
 let getColumn col = {Col=col;Type=getColumnType col}
 

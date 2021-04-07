@@ -62,6 +62,7 @@ let mapResultList f = mapResult List.append f
 let applyResultList f = applyResult List.append f
 
 let (>>=) x y = Result.bind y x
+let (|>>) x y = Result.map y x
 let (<!>) = mapResultList
 let (<*>) = applyResultList
 let lift2Result f a b =
