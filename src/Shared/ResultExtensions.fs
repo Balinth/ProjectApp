@@ -70,3 +70,10 @@ let lift2Result f a b =
 
 let lift3Result f a b c =
     f <!> a <*> b <*> c
+
+module Result =
+
+    let getError defaultValue result =
+        match result with
+        | Ok _ -> defaultValue
+        | Error error -> error

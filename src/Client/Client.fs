@@ -11,28 +11,63 @@ open Thoth.Json
 open Fable.Core.JsInterop
 open Fable.Remoting.Client
 
+open ResultExtensions
 open PrimeReact.Column
 open PrimeReact.DataTable
 open Shared
 open Language
+open Validation
 
 // The model holds data that you want to keep track of while the application is running
 // in this case, we are keeping track of a counter
 // we mark it as optional, because initially it will not be available from the client
 // the initial value will be requested from server
-type Model = { 
-    Language : Language.LStr -> string
+
+type UserModel = {
     User : UserInfo option
-    Table : TableComponent.Model
+    Token : string
+}
+
+type QueryPage = {
+    Table: TableComponent.Model
+}
+
+type SubPageModel =
+    | UserPage
+    | LoginPage of Login.Model
+    | RegisterPage
+    | QueryPage of QueryPage
+
+type ChangePage =
+    | ToUserPage
+    | ToLoginPage
+    | ToRegisterPage
+    | ToQueryPage
+
+type SubPageMsg =
+    | LoginPageMsg of Login.Msg
+
+type Model = {
+    Language : Language.LStr -> string
+    User : UserModel option
+    SubPage : SubPageModel
 }
 
 // The Msg type defines what events/actions can occur while the application is running
 // the state of the application changes *only* in reaction to these events
 type Msg =
     | ChangeLanguage of Language
-    | GetUser
-    | UserDetails of UserInfo option
+    | ChangeToPage of ChangePage
+    | SubPageMsg of SubPageMsg
+    //| Login of LoginInfo
+    | Logout
+    | UserDetails of UserInfoResult
+    //| APIErrors of APIError list
     | TableMsg of TableComponent.Msg
+    | LoginSuccess of token:string
+    | LoginFailed of LoginError
+    | UnexpectedError of string
+
 
 module Server =
 
@@ -45,59 +80,109 @@ module Server =
       |> Remoting.withRouteBuilder Route.builder
       |> Remoting.buildProxy<ISecureAPI>
 
-let logIn = Server.api.logIn
-let logOut = Server.api.logOut
+let loginAPI = Server.api.login
+let register = Server.api.register
 let getUser = Server.api.getUserDetails
-let getTable = Server.api.getTable
+//let getTable = Server.api.getTable
+
+let secureRequestNaked fn token input =
+    fn {Token=token;Body=input}
+
+// Collapses the error cases from the secure request and the API itself into a unified error case
+let secureRequest fn token input =
+    async {
+        let! result = secureRequestNaked fn token input
+        return
+            match result with
+            | Ok (Ok result) -> Ok result
+            | Ok (Error apiErr) -> Error apiErr
+            | Error authErr -> Error authErr
+    }
+    //match  with
+    //| Ok (Ok result) -> Ok result
+    //| Ok (Error err) -> Error err
+    //| Error err -> Error err
 
 // defines the initial state and initial command (= side-effect) of the application
 let init () : Model * Cmd<Msg> =
-    let initialModel = { Language = getMLString English; User = None; Table = {Table=None}}
-    initialModel, Cmd.batch [Cmd.ofMsg GetUser; Cmd.OfAsync.perform getTable () TableComponent.Msg.TableGot |> Cmd.map TableMsg]
+    let initialModel = { Language = getMLString English; User = None; SubPage = LoginPage Login.init}
+    initialModel, Cmd.none
 
+let cmdExnHandler toMsg exn =
+        let err = sprintf "%A" exn
+        printfn "%s" err
+        toMsg err
 
-let signIn =
-    let res = fun () -> Fetch.fetch @"/api/ISecureAPI/logInFOS" [
-        Fetch.Types.RequestProperties.Method Fetch.Types.HttpMethod.GET
-        Fetch.Types.RequestProperties.Mode Fetch.Types.RequestMode.Nocors
-        Fetch.requestHeaders [
-            Fetch.Types.Custom ("Sec-Fetch-Site", "none")
-            Fetch.Types.Custom ("fisfos", "none")
-            
-            ]
-        ]
-    res
+let loginCmdExnHandler loginMsg exn =
+    cmdExnHandler (UnexpectedLoginError >> Error >> loginMsg) exn
 
-let userDetailResult userDetails =
-    match userDetails with
-    | Ok user -> Some user |> UserDetails
-    | Error err ->
-        printfn "%A" err
-        UserDetails None
+let getUserCmdExnHandler exn =
+    cmdExnHandler (UnexpectedError) exn
+
+let login loginMsg loginInfo =
+    Cmd.OfAsync.either loginAPI loginInfo loginMsg (loginCmdExnHandler loginMsg)
+
+let errorToast lng error : Cmd<_> =
+    [fun _ -> printfn "%s" (lng error)]
 
 // The update function computes the next state of the application based on the current state and the incoming events/messages
 // It can also run side-effects (encoded as commands) like calling the server via Http.
 // these commands in turn, can dispatch messages to which the update function will react.
 let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
+    let errorToastTmp = errorToast id
+    let errorToast = errorToast currentModel.Language
     match msg with
-    | ChangeLanguage l -> {currentModel with Language = Language.getMLString l}, Cmd.none
-    | GetUser -> currentModel, Cmd.OfAsync.either getUser () userDetailResult (fun exn ->
-        printfn "Error getting user info: %A" exn 
-        UserDetails None)
-    | UserDetails user -> {currentModel with User = user}, Cmd.none
+    | ChangeLanguage l ->
+        {currentModel with Language = Language.getMLString l}, Cmd.none
+    //| Login loginInfo -> currentModel, Cmd.OfAsync.either login loginInfo LoginResult loginCmdExnHandler
+    | UserDetails user ->
+        match currentModel.User, user with
+        | Some currentUser, Ok userInfo -> {currentModel with User = Some {currentUser with User = Some userInfo}}, Cmd.none
+        | _, Error apiErrors ->
+            currentModel,
+            Cmd.batch (List.map (APIError >> errorToast) apiErrors)
+        | _, Ok _ -> currentModel, errorToast (ClientError UserInfoWithoutToken)
     | TableMsg msg ->
-        let compUpdate = TableComponent.update msg currentModel.Table
-        // for testing only
-        let err = sprintf "TableMsg: %A" msg
-        Fable.Core.JS.console.error err
-
-        {currentModel with Table = fst compUpdate }, snd compUpdate |> Cmd.map TableMsg
+        match currentModel.SubPage with
+        | QueryPage queryPage ->
+            let compUpdate = TableComponent.update msg queryPage.Table
+            // for testing only
+            let err = sprintf "TableMsg: %A" msg
+            Fable.Core.JS.console.error err
+            {currentModel with SubPage = QueryPage {queryPage with  Table = fst compUpdate }}, snd compUpdate |> Cmd.map TableMsg
+        | _ -> currentModel, Cmd.none
+    | ChangeToPage page ->
+        match page, currentModel.User with
+        | ToUserPage, Some _ -> {currentModel with SubPage=UserPage}, Cmd.none
+        | ToUserPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
+        | ToQueryPage, Some _ -> {currentModel with SubPage=QueryPage {Table = {Table = None}}}, Cmd.none
+        | ToQueryPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
+        | ToLoginPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
+        | ToLoginPage, Some _ -> {currentModel with SubPage=LoginPage Login.init}, Cmd.ofMsg Logout
+        | ToRegisterPage, None -> {currentModel with SubPage=RegisterPage}, Cmd.none
+        | ToRegisterPage, Some _ -> {currentModel with SubPage=RegisterPage}, Cmd.ofMsg Logout
+    | Logout -> {currentModel with User=None}, ToLoginPage |> ChangeToPage |> Cmd.ofMsg
+    | SubPageMsg subPageMsg ->
+            let newSubpageModel, cmds =
+                match subPageMsg, currentModel.SubPage with
+                | LoginPageMsg loginPageMsg, LoginPage loginPage ->
+                    let model, (cmd:Cmd<Msg>) = Login.update login LoginSuccess LoginFailed (LoginPageMsg >> SubPageMsg) loginPageMsg loginPage
+                    LoginPage model, cmd
+                | LoginPageMsg _, someOtherSubpage -> someOtherSubpage, Cmd.none
+            {currentModel with SubPage = newSubpageModel},cmds
+    //| APIErrors(_) -> failwith "Not Implemented"
+    | LoginSuccess token ->
+        {currentModel with User = Some {User = None; Token = token }},
+        Cmd.OfAsync.either (secureRequest getUser token) () UserDetails getUserCmdExnHandler
+    | LoginFailed loginError ->
+            currentModel, errorToast (LoginError loginError)
+    | UnexpectedError err -> currentModel, errorToastTmp err
 
 let tableDataFromDynTable (dynTable : DynamicTable._T) =
-    dynTable.Rows 
+    dynTable.Rows
     |> List.map (fun row ->
-        List.map2 (fun data header -> 
-            header ==> 
+        List.map2 (fun data header ->
+            header ==>
                 match data with
                 | DynamicTable.Data.Int int -> string int
                 | DynamicTable.Data.String str -> str
@@ -112,7 +197,7 @@ let tableHeader (dynTable : DynamicTable._T) =
     List.map2 (fun field head -> PrimeReact.Column.ColBuilder [field; head; ColProps.Sortable true ]) fields headers
     |> Seq.ofList
 
-let tableView (model : Model) dispatch =
+let tableView (model : QueryPage) dispatch =
     match model.Table.Table with
     | Some table ->
         let data = tableDataFromDynTable table
@@ -120,7 +205,7 @@ let tableView (model : Model) dispatch =
             DataTableBuilder [
                 DataTableProps.Header (Some ["Table View test"])
                 DataTableProps.Value (data)
-                ] 
+                ]
                 (tableHeader table)
         ]
     | None ->
@@ -154,7 +239,7 @@ let safeComponents =
           str " powered by: "
           components ]
 
-let showUser lString user = 
+let showUser lString user =
     match user with
     | Some user -> user.UserName
     | None -> lString Language.Login
@@ -163,7 +248,10 @@ let navbarItemRaw dispatch str msg =
     Navbar.Item.a [ Navbar.Item.Option.Props [ OnClick(fun _ -> dispatch (msg)) ] ]
         [ str ]
 
-let navBrand lStr user dispatch=
+let userPage (user:UserInfo) =
+    str user.PrimaryEmail
+
+let navBrand lStr (user:UserInfo option) dispatch =
     let navbarItem = fun s p -> (navbarItemRaw dispatch (str s) p)
     Navbar.navbar [ Navbar.Color IsWhite ]
         [ Container.container [ ]
@@ -172,10 +260,10 @@ let navBrand lStr user dispatch=
                       [ str "BIM Admin" ] ]
               Navbar.menu [ ]
                   [ Navbar.Start.div [ ]
-                      [ 
+                      [
                         match user with
-                        | Some user -> navbarItem user.UserName GetUser
-                        | None -> navbarItem (lStr Login) GetUser
+                        | Some user -> navbarItem user.UserName (ChangeToPage ToUserPage)
+                        | None -> navbarItem (lStr LStr.Login) (ChangeToPage ToUserPage)
 
                         Navbar.Item.a [ ]
                             [ str "Orders" ]
@@ -291,6 +379,26 @@ let counter (model : Model) (dispatch : Msg -> unit) =
                 [ Button.Color IsInfo]
                 [ str "-" ] ] ]
 
+type InputType =
+    | Text
+    | Password
+
+let textInput inputLabel initial inputType (onChange : string -> unit) =
+    let inputType =
+        match inputType with
+        | Text -> Input.text
+        | Password -> Input.password
+    Field.div [] [
+        Label.label [] [ str inputLabel ]
+        Control.div [] [
+            inputType [
+                Input.Placeholder inputLabel
+                Input.DefaultValue initial
+                Input.OnChange (fun e -> onChange !!e.target?value)
+            ]
+        ]
+    ]
+
 let columns (model : Model) (dispatch : Msg -> unit) =
     Columns.columns [ ]
         [ Column.column [ Column.Width (Screen.All, Column.Is6) ]
@@ -357,9 +465,108 @@ let columns (model : Model) (dispatch : Msg -> unit) =
                         [ Content.content   [ ]
                             [ counter model dispatch ] ] ]   ] ]
 
+let userPageView lstr (user:UserInfo option) dispatch =
+    match user with
+    | None -> lstr LStr.ErrorNotLoggedIn |> str
+    | Some user -> str user.UserName
+
+let appIcon =
+    img [
+        Src "/img/icon.png"
+        Style [
+            Height 60
+            Width 60
+        ]
+    ]
+
+let errorMsgs lstr errors =
+    match errors with
+    | [] -> div [] []
+    | notEmptyErrors ->
+        div [] [
+            ul [] [
+                for error in notEmptyErrors ->
+                    Text.div [ Modifiers [Modifier.TextColor IsDanger] ] [
+                        li [] [
+                            error |> lstr |> str
+                            ]
+                    ]
+            ]
+        ]
+
+let loginPageView (loginModel:Login.Model) lstr dispatch =
+    let button =
+        match loginModel.LoginState with
+        | Login.LastLoginFailed ->
+            Button.button [
+                Button.Disabled true
+                Button.IsLoading false
+                Button.Color IsDanger
+                ]
+                [lstr LStr.Login |> str]
+        | Login.Problems _->
+            Button.button [
+                Button.Disabled true
+                Button.IsLoading false
+                ]
+                [lstr LStr.Login |> str]
+        | Login.CanTry ->
+            Button.button [
+                Button.Disabled false
+                Button.IsLoading false
+                Button.OnClick (fun _ -> dispatch Login.Login)
+                ]
+                [lstr LStr.Login |> str]
+        | Login.WaitingForResponse ->
+            Button.button [
+                Button.Disabled true
+                Button.IsLoading true
+                ]
+                [lstr LStr.Login |> str]
+
+    div []
+        [ div []
+              [ div []
+                    [ h1 [ Style [ TextAlign TextAlignOptions.Center ] ] [ str "BIM-BAM" ]
+                      div [ Style [ TextAlign  TextAlignOptions.Center ] ] [ appIcon ]
+                      br []
+                      textInput "Username" loginModel.UserNameInput Text (Login.UserNameInputChange >> dispatch)
+                      (
+                          match loginModel.LoginState with
+                          | Login.Problems (usernameProblems, _) ->
+                            List.map LStr.ValidationError usernameProblems
+                          | _ -> []
+                          |> errorMsgs lstr
+                      )
+                      textInput "Password" loginModel.PasswordInput Password (Login.PasswordInputChange >> dispatch)
+                      (
+                          match loginModel.LoginState with
+                          | Login.Problems (_, passwordProblems) ->
+                            List.map LStr.ValidationError passwordProblems
+                          | _ -> []
+                          |> errorMsgs lstr
+                      )
+
+                      div [ Style [ TextAlign TextAlignOptions.Center ] ]
+                          [
+                            button
+                          ]
+                    ]
+                ]
+            ]
+
+
+
+let subPageView model dispatch =
+    match model.SubPage with
+    | QueryPage queryPage -> tableView queryPage dispatch
+    | UserPage -> userPageView model.Language ((model.User |> Option.bind (fun u -> u.User))) dispatch
+    | LoginPage logPage -> loginPageView logPage model.Language (LoginPageMsg >> SubPageMsg >> dispatch)
+    | RegisterPage -> failwith "Not Implemented"
+
 let view (model : Model) (dispatch : Msg -> unit) =
     div [ ]
-        [ navBrand model.Language model.User dispatch
+        [ navBrand model.Language (model.User |> Option.bind (fun u -> u.User)) dispatch
           Container.container [ ]
               [ Columns.columns [ ]
                   [ Column.column [ Column.Width (Screen.All, Column.Is3) ]
@@ -368,7 +575,7 @@ let view (model : Model) (dispatch : Msg -> unit) =
                       [ breadcrump
                         hero
                         info
-                        tableView model dispatch
+                        subPageView model dispatch
                         columns model dispatch
                         ] ] ] ]
 

@@ -6,3 +6,5 @@ Microsoft.AspNetCore.Authentication.AzureAD.UI
 Microsoft.Extensions.Configuration.Json
 System.Data.SQLite.Core
 Dapper
+jose-jwt
+Newtonsoft.Json

@@ -32,11 +32,12 @@ type AuthError =
     | TokenInvalid
     | UserUnauthorized
 
-type LoginResult =
-    | Success of token: string
+type LoginError =
     | UsernameDoesNotExist
     | PasswordIncorrect
     | UnexpectedLoginError of string
+
+type LoginResult = Result<string,LoginError>
 
 type DBError<'column,'table> =
     | DBException of Exception
@@ -56,6 +57,8 @@ type RegistrationError =
         * userNameProblem: Validation.ValidationError list
     | APIError of APIError list
 
+type ClientError =
+    | UserInfoWithoutToken
 
 type RegistrationResult = Result<string,RegistrationError>
 

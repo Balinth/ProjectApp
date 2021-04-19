@@ -7,6 +7,7 @@ nuget Dapper
     nuget FSharp.Core
     nuget Giraffe
     nuget Fable.Remoting.Giraffe ~> 3
+nuget jose-jwt
     nuget Microsoft.AspNetCore.Authentication.AzureAD.UI
     nuget Microsoft.Extensions.Configuration.Json
     nuget System.Data.SQLite.Core

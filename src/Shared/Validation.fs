@@ -1,6 +1,7 @@
 module Validation
 
 open System
+open ResultExtensions
 
 let plus addSuccess addFailure switch1 switch2 x =
     match (switch1 x),(switch2 x) with
@@ -44,7 +45,7 @@ let validateHasLowerChar s =
     | _ -> Error [LacksLowerChar]
 let validateNoSpecialChar s =
     match s with
-    | (s:string) when s.ToCharArray() |> Seq.exists (fun c -> Char.IsDigit c || Char.IsDigit c) -> Error [NoSpecialChar]
+    | (s:string) when s.ToCharArray() |> Seq.exists (fun c -> Char.IsLetterOrDigit c |> not) -> Error [NoSpecialChar]
     | _ -> Ok s
 
 
@@ -64,4 +65,6 @@ let validatePassword s =
     &&& validateHasUpperChar
     &&& validateHasLowerChar)
 
-
+let checkUsernameAndPassword userName password =
+    validateUsername userName |> Result.getError [],
+    validatePassword password |> Result.getError []
