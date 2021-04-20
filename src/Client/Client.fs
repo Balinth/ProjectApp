@@ -379,26 +379,6 @@ let counter (model : Model) (dispatch : Msg -> unit) =
                 [ Button.Color IsInfo]
                 [ str "-" ] ] ]
 
-type InputType =
-    | Text
-    | Password
-
-let textInput inputLabel initial inputType (onChange : string -> unit) =
-    let inputType =
-        match inputType with
-        | Text -> Input.text
-        | Password -> Input.password
-    Field.div [] [
-        Label.label [] [ str inputLabel ]
-        Control.div [] [
-            inputType [
-                Input.Placeholder inputLabel
-                Input.DefaultValue initial
-                Input.OnChange (fun e -> onChange !!e.target?value)
-            ]
-        ]
-    ]
-
 let columns (model : Model) (dispatch : Msg -> unit) =
     Columns.columns [ ]
         [ Column.column [ Column.Width (Screen.All, Column.Is6) ]
@@ -470,98 +450,11 @@ let userPageView lstr (user:UserInfo option) dispatch =
     | None -> lstr LStr.ErrorNotLoggedIn |> str
     | Some user -> str user.UserName
 
-let appIcon =
-    img [
-        Src "/img/icon.png"
-        Style [
-            Height 60
-            Width 60
-        ]
-    ]
-
-let errorMsgs lstr errors =
-    match errors with
-    | [] -> div [] []
-    | notEmptyErrors ->
-        div [] [
-            ul [] [
-                for error in notEmptyErrors ->
-                    Text.div [ Modifiers [Modifier.TextColor IsDanger] ] [
-                        li [] [
-                            error |> lstr |> str
-                            ]
-                    ]
-            ]
-        ]
-
-let loginPageView (loginModel:Login.Model) lstr dispatch =
-    let button =
-        match loginModel.LoginState with
-        | Login.LastLoginFailed ->
-            Button.button [
-                Button.Disabled true
-                Button.IsLoading false
-                Button.Color IsDanger
-                ]
-                [lstr LStr.Login |> str]
-        | Login.Problems _->
-            Button.button [
-                Button.Disabled true
-                Button.IsLoading false
-                ]
-                [lstr LStr.Login |> str]
-        | Login.CanTry ->
-            Button.button [
-                Button.Disabled false
-                Button.IsLoading false
-                Button.OnClick (fun _ -> dispatch Login.Login)
-                ]
-                [lstr LStr.Login |> str]
-        | Login.WaitingForResponse ->
-            Button.button [
-                Button.Disabled true
-                Button.IsLoading true
-                ]
-                [lstr LStr.Login |> str]
-
-    div []
-        [ div []
-              [ div []
-                    [ h1 [ Style [ TextAlign TextAlignOptions.Center ] ] [ str "BIM-BAM" ]
-                      div [ Style [ TextAlign  TextAlignOptions.Center ] ] [ appIcon ]
-                      br []
-                      textInput "Username" loginModel.UserNameInput Text (Login.UserNameInputChange >> dispatch)
-                      (
-                          match loginModel.LoginState with
-                          | Login.Problems (usernameProblems, _) ->
-                            List.map LStr.ValidationError usernameProblems
-                          | _ -> []
-                          |> errorMsgs lstr
-                      )
-                      textInput "Password" loginModel.PasswordInput Password (Login.PasswordInputChange >> dispatch)
-                      (
-                          match loginModel.LoginState with
-                          | Login.Problems (_, passwordProblems) ->
-                            List.map LStr.ValidationError passwordProblems
-                          | _ -> []
-                          |> errorMsgs lstr
-                      )
-
-                      div [ Style [ TextAlign TextAlignOptions.Center ] ]
-                          [
-                            button
-                          ]
-                    ]
-                ]
-            ]
-
-
-
 let subPageView model dispatch =
     match model.SubPage with
     | QueryPage queryPage -> tableView queryPage dispatch
     | UserPage -> userPageView model.Language ((model.User |> Option.bind (fun u -> u.User))) dispatch
-    | LoginPage logPage -> loginPageView logPage model.Language (LoginPageMsg >> SubPageMsg >> dispatch)
+    | LoginPage logPage -> Login.view logPage model.Language (LoginPageMsg >> SubPageMsg >> dispatch)
     | RegisterPage -> failwith "Not Implemented"
 
 let view (model : Model) (dispatch : Msg -> unit) =

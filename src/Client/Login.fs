@@ -3,6 +3,12 @@ module Login
 open Elmish
 open Validation
 open Shared
+open Fulma
+open Language
+open CommonView
+open Fable.React.Helpers
+open Fable.React.Props
+open Fable.React.Standard
 
 type Msg =
     | UserNameInputChange of string
@@ -52,3 +58,57 @@ let update login loginSuccessMsg loginErrorMsg mapInnerMsg loginMsg loginModel =
             loginModel, loginSuccessMsg token |> Cmd.ofMsg
         | Error loginError ->
                 {loginModel with LoginState = LastLoginFailed}, loginErrorMsg loginError |> Cmd.ofMsg
+
+
+let view (loginModel:Model) lstr dispatch =
+    let button =
+        match loginModel.LoginState with
+        | LastLoginFailed ->
+            Button.button [
+                Button.Disabled true
+                Button.IsLoading false
+                Button.Color IsDanger
+                ]
+                [lstr LStr.Login |> str]
+        | Problems _->
+            Button.button [
+                Button.Disabled true
+                Button.IsLoading false
+                ]
+                [lstr LStr.Login |> str]
+        | CanTry ->
+            Button.button [
+                Button.Disabled false
+                Button.IsLoading false
+                Button.OnClick (fun event ->
+                    event.preventDefault()
+                    dispatch Login)
+                ]
+                [lstr LStr.Login |> str]
+        | WaitingForResponse ->
+            Button.button [
+                Button.Disabled true
+                Button.IsLoading true
+                ]
+                [lstr LStr.Login |> str]
+
+    form [] [
+        Label.label [] [lstr LStr.Login |> str]
+        textInput "Username" loginModel.UserNameInput Text (UserNameInputChange >> dispatch)
+        (
+          match loginModel.LoginState with
+          | Problems (usernameProblems, _) ->
+            List.map LStr.ValidationError usernameProblems
+          | _ -> []
+          |> errorMsgs lstr
+        )
+        textInput "Password" loginModel.PasswordInput Password (PasswordInputChange >> dispatch)
+        (
+          match loginModel.LoginState with
+          | Problems (_, passwordProblems) ->
+            List.map LStr.ValidationError passwordProblems
+          | _ -> []
+          |> errorMsgs lstr
+        )
+        button
+    ]
