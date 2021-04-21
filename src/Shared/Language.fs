@@ -13,11 +13,17 @@ type Language =
 type LStr =
     | ErrorNotLoggedIn
     | Account
+    | Register
     | Login
     | Logout
     | ApplicationName
     | Username
     | Password
+    | PasswordConfirm
+    | GivenName
+    | FamilyName
+    | Email
+    | InvalidEmail
     | User
     | ValidationError of Validation.ValidationError
     | ClientError of ClientError
@@ -32,20 +38,27 @@ let rec englishString mlString =
     match mlString with
     | ErrorNotLoggedIn -> "Error: not logged in."
     | Account -> "Account"
+    | Register -> "Register"
     | Login -> "Login"
     | Logout -> "Logout"
     | ApplicationName -> "BIM-BAM"
     | Username -> "Username"
     | Password -> "Password"
+    | PasswordConfirm -> "Password confirmation"
     | User -> "User"
+    | GivenName -> "Given name"
+    | FamilyName -> "Family name"
+    | Email -> "Email"
+    | InvalidEmail -> "Invalid email"
     | ValidationError err ->
         match err with
         | NoWhitespace -> "No whitespaces!"
         | MinLength l -> "Min length: " + string l
         | NoSpecialChar -> "Can't contain special characters!"
-        | LacksNumericChar -> "Needs at least one numeric character"
-        | LacksUpperChar -> "Needs at least one upper case character"
-        | LacksLowerChar -> "Needs at least one lower case character"
+        | LacksNumericChar -> "Needs at least one numeric character."
+        | LacksUpperChar -> "Needs at least one upper case character."
+        | LacksLowerChar -> "Needs at least one lower case character."
+        | PasswordConfirmationDoesNotMatch -> "Password confirmation does not match."
 
     | ClientError clientErr ->
         match clientErr with
@@ -108,18 +121,25 @@ let rec englishString mlString =
                 |> List.map (APIError >> englishString)
                 |> foldListNewLines
             sprintf "API Errors:\n%s" errors
+        | UnexpectedRegistrationError err -> "Unexpected error: " + err
 
 
 let rec hungarianString mlString =
     match mlString with
     | ErrorNotLoggedIn -> "Hiba: nincs bejelentkezve."
     | Account -> "Felhasználói fiók"
+    | Register -> "Regisztráció"
     | Login -> "Bejelentkezés"
     | Logout -> "Kijelentkezés"
     | ApplicationName -> "BIM-BAM"
-    | Username -> "felhasználó név"
-    | Password -> "jelszó"
+    | Username -> "Felhasználó név"
+    | Password -> "Jelszó"
+    | PasswordConfirm -> "Jelszó megerősítés"
     | User -> "Felhasználó"
+    | GivenName -> "Keresztnév"
+    | FamilyName -> "Vezetéknév"
+    | Email -> "Email"
+    | InvalidEmail -> "Hibás email"
     | ValidationError err ->
         match err with
         | NoWhitespace -> "Nem lehet szóköz!"
@@ -128,6 +148,7 @@ let rec hungarianString mlString =
         | LacksNumericChar -> "Tartalmaznia kell minimum egy szám karaktert."
         | LacksUpperChar -> "Tartalmaznia kell minimum egy nagy betűt."
         | LacksLowerChar -> "Tartalmaznia kell minimum egy kis betűt."
+        | PasswordConfirmationDoesNotMatch -> "A jelszó megerősítés nem egyezik."
 
     | ClientError clientErr ->
         match clientErr with
@@ -190,6 +211,7 @@ let rec hungarianString mlString =
                 |> List.map (APIError >> hungarianString)
                 |> foldListNewLines
             sprintf "API Hibák:\n%s" errors
+        | UnexpectedRegistrationError err -> "Váratlan hiba: " + err
 
 let getMLString lang str =
     match lang with

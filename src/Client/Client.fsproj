@@ -24,6 +24,7 @@
     <Compile Include="TableComponent.fs" />
     <Compile Include="CommonView.fs" />
     <Compile Include="Login.fs" />
+    <Compile Include="Register.fs" />
     <Compile Include="Client.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

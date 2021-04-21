@@ -7,12 +7,14 @@ open Fable.React.Standard
 type InputType =
     | Text
     | Password
+    | Email
 
 let textInput inputLabel initial inputType (onChange : string -> unit) =
     let inputType =
         match inputType with
         | Text -> Input.text
         | Password -> Input.password
+        | Email -> Input.email
     Field.div [] [
         Label.label [] [ str inputLabel ]
         Control.div [] [

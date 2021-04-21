@@ -37,7 +37,9 @@ type LoginError =
     | PasswordIncorrect
     | UnexpectedLoginError of string
 
-type LoginResult = Result<string,LoginError>
+type Token = Token of string
+
+type LoginResult = Result<Token,LoginError>
 
 type DBError<'column,'table> =
     | DBException of Exception
@@ -56,11 +58,14 @@ type RegistrationError =
         passwordProblem: Validation.ValidationError list
         * userNameProblem: Validation.ValidationError list
     | APIError of APIError list
+    | UnexpectedRegistrationError of string
 
 type ClientError =
     | UserInfoWithoutToken
 
-type RegistrationResult = Result<string,RegistrationError>
+type UserName = UserName of string
+
+type RegistrationResult = Result<UserName,RegistrationError>
 
 type UserInfoResult = Result<UserInfo,APIError list>
 

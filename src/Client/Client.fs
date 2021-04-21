@@ -25,7 +25,7 @@ open Validation
 
 type UserModel = {
     User : UserInfo option
-    Token : string
+    Token : Token
 }
 
 type QueryPage = {
@@ -35,7 +35,7 @@ type QueryPage = {
 type SubPageModel =
     | UserPage
     | LoginPage of Login.Model
-    | RegisterPage
+    | RegisterPage of Register.Model
     | QueryPage of QueryPage
 
 type ChangePage =
@@ -46,6 +46,7 @@ type ChangePage =
 
 type SubPageMsg =
     | LoginPageMsg of Login.Msg
+    | RegisterPageMsg of Register.Msg
 
 type Model = {
     Language : Language.LStr -> string
@@ -64,8 +65,10 @@ type Msg =
     | UserDetails of UserInfoResult
     //| APIErrors of APIError list
     | TableMsg of TableComponent.Msg
-    | LoginSuccess of token:string
+    | LoginSuccess of token:Token
     | LoginFailed of LoginError
+    | RegistrationSuccess of UserName
+    | RegistrationFailed of RegistrationError
     | UnexpectedError of string
 
 
@@ -81,7 +84,7 @@ module Server =
       |> Remoting.buildProxy<ISecureAPI>
 
 let loginAPI = Server.api.login
-let register = Server.api.register
+let registerAPI = Server.api.register
 let getUser = Server.api.getUserDetails
 //let getTable = Server.api.getTable
 
@@ -90,6 +93,7 @@ let secureRequestNaked fn token input =
 
 // Collapses the error cases from the secure request and the API itself into a unified error case
 let secureRequest fn token input =
+    let (Token(token)) = token
     async {
         let! result = secureRequestNaked fn token input
         return
@@ -105,7 +109,7 @@ let secureRequest fn token input =
 
 // defines the initial state and initial command (= side-effect) of the application
 let init () : Model * Cmd<Msg> =
-    let initialModel = { Language = getMLString English; User = None; SubPage = LoginPage Login.init}
+    let initialModel = { Language = getMLString English; User = None; SubPage = RegisterPage Register.init}
     initialModel, Cmd.none
 
 let cmdExnHandler toMsg exn =
@@ -121,6 +125,9 @@ let getUserCmdExnHandler exn =
 
 let login loginMsg loginInfo =
     Cmd.OfAsync.either loginAPI loginInfo loginMsg (loginCmdExnHandler loginMsg)
+
+let register registerMsg registerInfo =
+    Cmd.OfAsync.either registerAPI registerInfo registerMsg (cmdExnHandler (UnexpectedRegistrationError >> Error >> registerMsg))
 
 let errorToast lng error : Cmd<_> =
     [fun _ -> printfn "%s" (lng error)]
@@ -159,8 +166,8 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
         | ToQueryPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToLoginPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToLoginPage, Some _ -> {currentModel with SubPage=LoginPage Login.init}, Cmd.ofMsg Logout
-        | ToRegisterPage, None -> {currentModel with SubPage=RegisterPage}, Cmd.none
-        | ToRegisterPage, Some _ -> {currentModel with SubPage=RegisterPage}, Cmd.ofMsg Logout
+        | ToRegisterPage, None -> {currentModel with SubPage=RegisterPage Register.init}, Cmd.none
+        | ToRegisterPage, Some _ -> {currentModel with SubPage=RegisterPage Register.init}, Cmd.ofMsg Logout
     | Logout -> {currentModel with User=None}, ToLoginPage |> ChangeToPage |> Cmd.ofMsg
     | SubPageMsg subPageMsg ->
             let newSubpageModel, cmds =
@@ -169,6 +176,10 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
                     let model, (cmd:Cmd<Msg>) = Login.update login LoginSuccess LoginFailed (LoginPageMsg >> SubPageMsg) loginPageMsg loginPage
                     LoginPage model, cmd
                 | LoginPageMsg _, someOtherSubpage -> someOtherSubpage, Cmd.none
+                | RegisterPageMsg registerPageMsg, RegisterPage registerPage ->
+                    let model, cmd = Register.update register RegistrationSuccess RegistrationFailed (RegisterPageMsg >> SubPageMsg) registerPageMsg registerPage
+                    RegisterPage model, cmd
+                | RegisterPageMsg _, someOtherSubpage -> someOtherSubpage, Cmd.none
             {currentModel with SubPage = newSubpageModel},cmds
     //| APIErrors(_) -> failwith "Not Implemented"
     | LoginSuccess token ->
@@ -177,6 +188,8 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     | LoginFailed loginError ->
             currentModel, errorToast (LoginError loginError)
     | UnexpectedError err -> currentModel, errorToastTmp err
+    | RegistrationSuccess(_) -> failwith "Not Implemented"
+    | RegistrationFailed(_) -> failwith "Not Implemented"
 
 let tableDataFromDynTable (dynTable : DynamicTable._T) =
     dynTable.Rows
@@ -455,7 +468,7 @@ let subPageView model dispatch =
     | QueryPage queryPage -> tableView queryPage dispatch
     | UserPage -> userPageView model.Language ((model.User |> Option.bind (fun u -> u.User))) dispatch
     | LoginPage logPage -> Login.view logPage model.Language (LoginPageMsg >> SubPageMsg >> dispatch)
-    | RegisterPage -> failwith "Not Implemented"
+    | RegisterPage regPage -> Register.view regPage model.Language (RegisterPageMsg >> SubPageMsg >> dispatch)
 
 let view (model : Model) (dispatch : Msg -> unit) =
     div [ ]

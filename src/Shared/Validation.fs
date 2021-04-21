@@ -21,6 +21,7 @@ type ValidationError =
     | LacksNumericChar
     | LacksUpperChar
     | LacksLowerChar
+    | PasswordConfirmationDoesNotMatch
 
 let validateNoWhitespace s =
     match s with
@@ -65,6 +66,20 @@ let validatePassword s =
     &&& validateHasUpperChar
     &&& validateHasLowerChar)
 
+let checkEmail email =
+    System.Text.RegularExpressions.Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 let checkUsernameAndPassword userName password =
     validateUsername userName |> Result.getError [],
     validatePassword password |> Result.getError []
+
+let checkRegistrationFields userName password email =
+    validateUsername userName |> Result.getError [],
+    validatePassword password |> Result.getError [],
+    checkEmail email
+
+let checkRegisterInputs userName password email passwordconfirm =
+    validateUsername userName |> Result.getError [],
+    validatePassword password |> Result.getError [],
+    checkEmail email,
+    password = passwordconfirm
