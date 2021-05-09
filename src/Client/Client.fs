@@ -24,7 +24,7 @@ open Validation
 // the initial value will be requested from server
 
 type UserModel = {
-    User : UserInfo option
+    User : UserInfo
     Token : Token
 }
 
@@ -58,14 +58,11 @@ type Model = {
 // the state of the application changes *only* in reaction to these events
 type Msg =
     | ChangeLanguage of Language
-    | ChangeToPage of ChangePage
+    | ChangePage of ChangePage
     | SubPageMsg of SubPageMsg
-    //| Login of LoginInfo
     | Logout
-    | UserDetails of UserInfoResult
-    //| APIErrors of APIError list
     | TableMsg of TableComponent.Msg
-    | LoginSuccess of token:Token
+    | LoginSuccess of token:Token * user: UserInfo
     | LoginFailed of LoginError
     | RegistrationSuccess of UserName
     | RegistrationFailed of RegistrationError
@@ -141,14 +138,6 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     match msg with
     | ChangeLanguage l ->
         {currentModel with Language = Language.getMLString l}, Cmd.none
-    //| Login loginInfo -> currentModel, Cmd.OfAsync.either login loginInfo LoginResult loginCmdExnHandler
-    | UserDetails user ->
-        match currentModel.User, user with
-        | Some currentUser, Ok userInfo -> {currentModel with User = Some {currentUser with User = Some userInfo}}, Cmd.none
-        | _, Error apiErrors ->
-            currentModel,
-            Cmd.batch (List.map (APIError >> errorToast) apiErrors)
-        | _, Ok _ -> currentModel, errorToast (ClientError UserInfoWithoutToken)
     | TableMsg msg ->
         match currentModel.SubPage with
         | QueryPage queryPage ->
@@ -158,7 +147,7 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
             Fable.Core.JS.console.error err
             {currentModel with SubPage = QueryPage {queryPage with  Table = fst compUpdate }}, snd compUpdate |> Cmd.map TableMsg
         | _ -> currentModel, Cmd.none
-    | ChangeToPage page ->
+    | ChangePage page ->
         match page, currentModel.User with
         | ToUserPage, Some _ -> {currentModel with SubPage=UserPage}, Cmd.none
         | ToUserPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
@@ -168,7 +157,7 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
         | ToLoginPage, Some _ -> {currentModel with SubPage=LoginPage Login.init}, Cmd.ofMsg Logout
         | ToRegisterPage, None -> {currentModel with SubPage=RegisterPage Register.init}, Cmd.none
         | ToRegisterPage, Some _ -> {currentModel with SubPage=RegisterPage Register.init}, Cmd.ofMsg Logout
-    | Logout -> {currentModel with User=None}, ToLoginPage |> ChangeToPage |> Cmd.ofMsg
+    | Logout -> {currentModel with User=None}, ToLoginPage |> ChangePage |> Cmd.ofMsg
     | SubPageMsg subPageMsg ->
             let newSubpageModel, cmds =
                 match subPageMsg, currentModel.SubPage with
@@ -182,14 +171,17 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
                 | RegisterPageMsg _, someOtherSubpage -> someOtherSubpage, Cmd.none
             {currentModel with SubPage = newSubpageModel},cmds
     //| APIErrors(_) -> failwith "Not Implemented"
-    | LoginSuccess token ->
-        {currentModel with User = Some {User = None; Token = token }},
-        Cmd.OfAsync.either (secureRequest getUser token) () UserDetails getUserCmdExnHandler
+    | LoginSuccess (token, user) ->
+        {currentModel with User = Some {User = user; Token = token }},
+        Cmd.ofMsg (ChangePage ToUserPage)
     | LoginFailed loginError ->
             currentModel, errorToast (LoginError loginError)
     | UnexpectedError err -> currentModel, errorToastTmp err
-    | RegistrationSuccess(_) -> failwith "Not Implemented"
-    | RegistrationFailed(_) -> failwith "Not Implemented"
+    | RegistrationSuccess(_) -> currentModel, Cmd.ofMsg (ChangePage ToLoginPage)
+    | RegistrationFailed error ->
+        currentModel ,Cmd.batch [
+            errorToast (LStr.RegistrationError error)
+        ]
 
 let tableDataFromDynTable (dynTable : DynamicTable._T) =
     dynTable.Rows
@@ -273,17 +265,29 @@ let navBrand lStr (user:UserInfo option) dispatch =
                       [ str "BIM Admin" ] ]
               Navbar.menu [ ]
                   [ Navbar.Start.div [ ]
-                      [
-                        match user with
-                        | Some user -> navbarItem user.UserName (ChangeToPage ToUserPage)
-                        | None -> navbarItem (lStr LStr.Login) (ChangeToPage ToUserPage)
-
-                        Navbar.Item.a [ ]
-                            [ str "Orders" ]
-                        Navbar.Item.a [ ]
-                            [ str "Payments" ]
-                        Navbar.Item.a [ ]
-                            [ str "Exceptions" ] ] ] ] ]
+                        (List.concat [
+                            (match user with
+                            | Some user -> [
+                                    navbarItem user.UserName (ChangePage ToUserPage)
+                                    navbarItem (lStr LStr.Logout) (Logout)
+                                ]
+                            | None -> [
+                                    navbarItem (lStr LStr.Login) (ChangePage ToUserPage)
+                                    navbarItem (lStr LStr.Register) (ChangePage ToRegisterPage)
+                                ]
+                            );
+                            [
+                                Navbar.Item.a [ ]
+                                    [ str "Orders" ]
+                                Navbar.Item.a [ ]
+                                    [ str "Payments" ]
+                                Navbar.Item.a [ ]
+                                    [ str "Exceptions" ]
+                            ]
+                        ])
+                   ]
+                ]
+            ]
 
 let menu =
     Menu.menu [ ]
@@ -458,21 +462,16 @@ let columns (model : Model) (dispatch : Msg -> unit) =
                         [ Content.content   [ ]
                             [ counter model dispatch ] ] ]   ] ]
 
-let userPageView lstr (user:UserInfo option) dispatch =
-    match user with
-    | None -> lstr LStr.ErrorNotLoggedIn |> str
-    | Some user -> str user.UserName
-
 let subPageView model dispatch =
     match model.SubPage with
     | QueryPage queryPage -> tableView queryPage dispatch
-    | UserPage -> userPageView model.Language ((model.User |> Option.bind (fun u -> u.User))) dispatch
+    | UserPage -> UserDetails.view model.Language ((model.User |> Option.map (fun u -> u.User))) dispatch
     | LoginPage logPage -> Login.view logPage model.Language (LoginPageMsg >> SubPageMsg >> dispatch)
     | RegisterPage regPage -> Register.view regPage model.Language (RegisterPageMsg >> SubPageMsg >> dispatch)
 
 let view (model : Model) (dispatch : Msg -> unit) =
     div [ ]
-        [ navBrand model.Language (model.User |> Option.bind (fun u -> u.User)) dispatch
+        [ navBrand model.Language (model.User |> Option.map (fun u -> u.User)) dispatch
           Container.container [ ]
               [ Columns.columns [ ]
                   [ Column.column [ Column.Width (Screen.All, Column.Is3) ]

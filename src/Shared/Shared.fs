@@ -12,6 +12,8 @@ type LoginInfo = {
     Password : string
 }
 
+type Token = Token of string
+
 type UserInfo = {
     UserName : string
     UserNameID : string
@@ -37,9 +39,7 @@ type LoginError =
     | PasswordIncorrect
     | UnexpectedLoginError of string
 
-type Token = Token of string
-
-type LoginResult = Result<Token,LoginError>
+type LoginResult = Result<Token * UserInfo,LoginError>
 
 type DBError<'column,'table> =
     | DBException of Exception

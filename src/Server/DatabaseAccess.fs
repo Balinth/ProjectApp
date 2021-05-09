@@ -250,6 +250,9 @@ let queryUserNameTaken userName =
     |>> (fun objs -> objs.Count() = 1)
 
 let register (registerInfo:RegisterInfo) : RegistrationResult =
+    System.Environment.GetEnvironmentVariables().Keys
+    |> Seq.cast
+    |> Seq.iter (fun o -> printfn "%A" o)
     match Validation.validateUsername registerInfo.UserName, Validation.validatePassword registerInfo.Password with
     | Ok userName, Ok password ->
         let insertUserValues = [
@@ -292,7 +295,7 @@ let register (registerInfo:RegisterInfo) : RegistrationResult =
             let! insertResult =
                 executeInsert projectAppDBSchema sqlString
                 >>= (ensureInsert 1)
-            return! userName |> Ok
+            return! userName |> Shared.UserName |> Ok
             }
             |> Result.mapError (List.map DBError >> APIError)
     | Error userNameProblems, Error passwordProblems -> ValidationError (passwordProblems,userNameProblems) |> Error
@@ -305,13 +308,21 @@ let login (loginInfo:LoginInfo) =
     | Ok (Some dbAuth) ->
         if Security.verifyPassword loginInfo.Password dbAuth.Salt dbAuth.PasswordHash
         then
-            let userInfo : UserAuthInfo = {UserName = loginInfo.UserName}
-            let token = encodeJwt userInfo
-            Success token
+            let userName : UserAuthInfo = {UserName = loginInfo.UserName}
+            let token = encodeJwt userName
+            let userDetails =
+                getUserByName loginInfo.UserName
+                |> alwaysOneQuery
+                |>> dbUserToUserInfo
+                |> mapDBErrorToAPIError
+            match userDetails with
+            | Ok userDetails ->
+                (Token token, userDetails) |> Ok
+            | Error errors -> Error (UnexpectedLoginError (sprintf "%A" errors))
         else
-            PasswordIncorrect
-    | Ok None -> UsernameDoesNotExist
-    | Error error -> UnexpectedLoginError "Server error"
+            Error PasswordIncorrect
+    | Ok None -> Error UsernameDoesNotExist
+    | Error error -> UnexpectedLoginError (sprintf "%A" error) |> Error
 
 let insertUser (user:UserInfo) =
     let insertValues = [

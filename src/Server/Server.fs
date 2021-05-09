@@ -31,11 +31,16 @@ let liftAsync x = async { return x }
 JwtSecurityTokenHandler.DefaultMapInboundClaims <- false
 
 let tryGetEnv = System.Environment.GetEnvironmentVariable >> function null | "" -> None | x -> Some x
+let tryGetConfigOr<'a when 'a : null> (config: IConfiguration) key orDo =
+    match config.GetValue<'a> key with
+    | null -> orDo()
+    | someStr -> someStr
 
 let publicPath = Path.GetFullPath "../Client/public"
 let port =
     "SERVER_PORT"
     |> tryGetEnv |> Option.map uint16 |> Option.defaultValue 8085us
+let serverSecretConfigKey = "ServerSecret"
 
 let api : ISecureAPI = {
     register = register >> liftAsync
@@ -70,6 +75,10 @@ let configureApp (context : WebHostBuilderContext) (app : IApplicationBuilder) =
 
 let configureServices (services : IServiceCollection) =
     let configuration = services.BuildServiceProvider().GetService<IConfiguration>()
+    let serverSecret : string =
+        tryGetConfigOr configuration serverSecretConfigKey
+            (fun () -> failwith (sprintf "Could not find %s in configuration files!" serverSecretConfigKey ))
+    System.Environment.SetEnvironmentVariable(serverSecretConfigKey, serverSecret)
     services
         .Configure( fun (opt:CookiePolicyOptions) ->
             opt.CheckConsentNeeded <- fun ctx -> true

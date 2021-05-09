@@ -143,7 +143,7 @@ let view (model:Model) lstr dispatch =
 
     form [] [
         Label.label [] [lstr LStr.Register |> str]
-        textInput username model.RegistrationFields.UserNameInput Text (UserNameInputChange >> dispatch)
+        textInput username Text (UserNameInputChange >> dispatch)
         (
           match model.RegisterState with
           | Problems (usernameProblems, _,_,_) ->
@@ -151,7 +151,7 @@ let view (model:Model) lstr dispatch =
           | _ -> []
           |> errorMsgs lstr
         )
-        textInput email model.RegistrationFields.UserEmail Email (EmailInputChange >> dispatch)
+        textInput email Email (EmailInputChange >> dispatch)
         (
           match model.RegisterState with
           | Problems (_, _,false,_) ->
@@ -159,7 +159,7 @@ let view (model:Model) lstr dispatch =
           | _ -> []
           |> errorMsgs lstr
         )
-        textInput password model.RegistrationFields.PasswordInput Password (PasswordInputChange >> dispatch)
+        textInput password Password (PasswordInputChange >> dispatch)
         (
           match model.RegisterState with
           | Problems (_, passwordProblems,_,_) ->
@@ -167,7 +167,7 @@ let view (model:Model) lstr dispatch =
           | _ -> []
           |> errorMsgs lstr
         )
-        textInput passwordConfirm model.RegistrationFields.PasswordConfirmInput Password (PasswordConfirmInputChange >> dispatch)
+        textInput passwordConfirm Password (PasswordConfirmInputChange >> dispatch)
         (
           match model.RegisterState with
           | Problems (_, _,_,false) ->
@@ -175,7 +175,7 @@ let view (model:Model) lstr dispatch =
           | _ -> []
           |> errorMsgs lstr
         )
-        textInput givenname model.RegistrationFields.GivenName Text (GivenNameInputChange >> dispatch)
-        textInput familyname model.RegistrationFields.FamilyName Text (FamilyNameInputChange >> dispatch)
+        textInput givenname Text (GivenNameInputChange >> dispatch)
+        textInput familyname Text (FamilyNameInputChange >> dispatch)
         button
     ]

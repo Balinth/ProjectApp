@@ -132,7 +132,7 @@ let stringizeSQLInsert db statement =
         |> List.reduce (fun sum c -> sum + "," + c)
     let colParams =
         cols
-        |> List.map (fun c -> db.GetColumnName c.Column.Col + "@")
+        |> List.map (fun c -> "@"  + (db.GetColumnName c.Column.Col))
         |> List.reduce (fun sum c -> sum + "," + c)
     let sqlStr = "INSERT INTO " + (InsertStatement.table statement |> db.GetTableName) + " (" + columns + ") VALUES (" + colParams + ")"
     Ok (sqlStr, InsertStatement.cols statement)
@@ -149,7 +149,7 @@ match testSQL with
 *)
 (*
 
-let UserColumns = 
+let UserColumns =
     [
         ("UserName", {Table="User";Name="UserName";DataType=DBString})
         ("UserNameID",{Table="User";Name="UserNameID";DataType=DBString})

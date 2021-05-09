@@ -10,6 +10,10 @@ type ProjectAppTable =
     | UserTable
     | ForFabricationTable
     | LocalAuthenticationTable
+    | OrganizationTable
+    | OrganizationMemberTable
+    | DesignerTable
+    | DrafterTable
 
 type ProjectCol =
     | ProjectName
@@ -23,6 +27,7 @@ type PhaseCol =
     | Revision
     | Project_ID
     | ForFabrication_ID
+    | Mass
 
 type UserCol =
     | UserID
@@ -32,11 +37,31 @@ type UserCol =
     | PrimaryEmail
     | UserNameID
 
+type OrganizationCol =
+    | OrganizationID
+    | OrganizationName
+
+type OrganizationMemberCol =
+    | User_ID
+    | Organization_ID
+
 type ForFabricationCol =
     | ForFabricationID
     | SenderUser_ID
     | EmailOriginal
     | SentDate
+
+type DesignerCol =
+    | User_ID
+    | Phase_ID
+    | Phase_ProjectID
+    | Phase_Revision
+
+type DrafterCol =
+    | User_ID
+    | Phase_ID
+    | Phase_ProjectID
+    | Phase_Revision
 
 type LocalAuthenticationCol =
     | LocalAuthID
@@ -50,6 +75,10 @@ type ProjectAppCol =
     | UserCol of UserCol
     | ForFabricationCol of ForFabricationCol
     | LocalAuthenticationCol of LocalAuthenticationCol
+    | OrganizationCol of OrganizationCol
+    | OrganizationMemberCol of OrganizationMemberCol
+    | DrafterCol of DrafterCol
+    | DesignerCol of DesignerCol
 
 let getColumnTable col =
     match col with
@@ -58,6 +87,10 @@ let getColumnTable col =
     | UserCol _ -> UserTable
     | ForFabricationCol(_) -> ForFabricationTable
     | LocalAuthenticationCol(_) -> LocalAuthenticationTable
+    | OrganizationCol(_) -> OrganizationTable
+    | OrganizationMemberCol(_) -> OrganizationMemberTable
+    | DrafterCol(_) -> DrafterTable
+    | DesignerCol(_) -> DesignerTable
 
 let getTableName table : string =
     match table with
@@ -66,6 +99,10 @@ let getTableName table : string =
     | PhaseTable -> "Phase"
     | ForFabricationTable -> "ForFabrication"
     | LocalAuthenticationTable -> "LocalAuthentication"
+    | OrganizationTable -> "Organization"
+    | OrganizationMemberTable -> "OrganizationMember"
+    | DesignerTable -> "Designer"
+    | DrafterTable -> "Drafter"
 
 let getColumnName (col : ProjectAppCol) : string =
     match col with
@@ -90,6 +127,7 @@ let getColumnName (col : ProjectAppCol) : string =
         | Revision -> "Revision"
         | Project_ID -> "Project_ID"
         | ForFabrication_ID -> "ForFabrication_ID"
+        | Mass -> "Mass"
     | ForFabricationCol forFabCol ->
         match forFabCol with
         | ForFabricationID -> "ForFabricationID"
@@ -102,6 +140,26 @@ let getColumnName (col : ProjectAppCol) : string =
         | PasswordHash -> "PasswordHash"
         | User_ID -> "User_ID"
         | Salt -> "Salt"
+    | OrganizationCol orgCol ->
+        match orgCol with
+        | OrganizationID -> "OrganizationID"
+        | OrganizationName -> "OrganizationName"
+    | OrganizationMemberCol orgMemberCol ->
+        match orgMemberCol with
+        | Organization_ID -> "Organization_ID"
+        | OrganizationMemberCol.User_ID -> "User_ID"
+    | DrafterCol drafterCol ->
+        match drafterCol with
+        | DrafterCol.User_ID -> "User_ID"
+        | DrafterCol.Phase_ID -> "Phase_ID"
+        | DrafterCol.Phase_ProjectID -> "Phase_ProjectID"
+        | DrafterCol.Phase_Revision -> "Phase_Revision"
+    | DesignerCol designerCol ->
+        match designerCol with
+        | DesignerCol.User_ID -> "User_ID"
+        | DesignerCol.Phase_ID -> "Phase_ID"
+        | DesignerCol.Phase_ProjectID -> "Phase_ProjectID"
+        | DesignerCol.Phase_Revision -> "Phase_Revision"
 
 let getColumnType col =
     match col with
@@ -126,6 +184,7 @@ let getColumnType col =
         | Revision -> DBString
         | Project_ID -> DBInt
         | ForFabrication_ID -> DBInt
+        | Mass -> DBFloat
     | ForFabricationCol forFabCol ->
         match forFabCol with
         | ForFabricationID -> DBInt
@@ -138,6 +197,26 @@ let getColumnType col =
         | LocalAuthID -> DBInt
         | PasswordHash -> DBString
         | Salt -> DBString
+    | OrganizationCol orgCol ->
+        match orgCol with
+        | OrganizationID -> DBInt
+        | OrganizationName -> DBString
+    | OrganizationMemberCol orgMemberCol ->
+        match orgMemberCol with
+        | Organization_ID -> DBInt
+        | OrganizationMemberCol.User_ID -> DBInt
+    | DrafterCol drafterCol ->
+        match drafterCol with
+        | DrafterCol.User_ID -> DBInt
+        | DrafterCol.Phase_ID -> DBInt
+        | DrafterCol.Phase_ProjectID -> DBInt
+        | DrafterCol.Phase_Revision -> DBString
+    | DesignerCol designerCol ->
+        match designerCol with
+        | DesignerCol.User_ID -> DBInt
+        | DesignerCol.Phase_ID -> DBInt
+        | DesignerCol.Phase_ProjectID -> DBInt
+        | DesignerCol.Phase_Revision -> DBString
 
 let getColumn col = {Col=col;Type=getColumnType col}
 
