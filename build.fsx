@@ -69,9 +69,8 @@ let runToolWithInput cmd args workingDir inputStream =
     |> CreateProcess.ensureExitCode
     |> CreateProcess.withStandardInput (CreatePipe inputStream)
     |> Proc.start
-    |> ignore
 
-let runToolWithOutputFiltering cmd args workingDir = 
+let runToolWithOutputFiltering cmd args workingDir =
     let arguments = args |> String.split ' ' |> Arguments.OfArgs
     Command.RawCommand (cmd, arguments)
     |> CreateProcess.fromCommand
@@ -106,12 +105,15 @@ let devDBFun = (fun _ ->
     let input = ".read DevDatabase.sql" + Environment.NewLine
     let streamRef = StreamRef.Empty
     Fake.IO.Shell.copyFile dbPath (serverPath + "/DevDatabase.sql")
-    runToolWithInput sqliteTool devDBFile dbPath streamRef
+    let sqliteTask = runToolWithInput sqliteTool devDBFile dbPath streamRef
     use writer = new StreamWriter(streamRef.Value)
+    Trace.trace input
     writer.Write(input)
     writer.Flush()
-    writer.Write(".exit")
+    writer.Write(".exit" + Environment.NewLine)
+    Trace.trace ".exit"
     writer.Flush()
+    sqliteTask.Wait()
     Trace.trace "Initialized DB"
 )
 
