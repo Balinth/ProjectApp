@@ -213,14 +213,15 @@ let getDatabaseColumns<'c> getColumnType =
 
 type DatabaseParser<'c,'t,'parserLabel,'parserError> = {
     ColumnNameP : Parser<Column<'c>,'parserLabel,'parserError>
+    TableSpecificColumnNameP : 't -> Parser<Column<'c>,'parserLabel,'parserError>
     TableNameP : Parser<'t,'parserLabel,'parserError>
     DatabaseSchema : DatabaseSchema<'c,'t>
 }
 
 let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
-    let cases = getDatabaseColumnCases<'c>() |> Seq.sortDescending
+    let allCases = getDatabaseColumnCases<'c>() |> Seq.sortDescending
     let tablePMap =
-        cases
+        allCases
         |> Seq.map (fun (columnCase:'c) ->
             let tableName = db.GetTableNameByColumn columnCase
             tableName
@@ -237,19 +238,30 @@ let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
         |> List.sortByDescending (fst >> db.GetTableNameByColumn)
         |> List.map snd
         |> choice
-    let columnP =
+
+    //let dbSpecificColumnP =
+
+    let columnParsers cases =
         cases
         |> Seq.map (fun columnCase ->
-            let colTableP = opt (tablePMap.[columnCase] .>>. pchar '.' |> attemptP)
+            let colTableP = opt (tablePMap.[columnCase] .>. pchar '.' |> attemptP)
             let colName = db.GetColumnName columnCase
             colTableP
-            >>. pstring colName
+            >. pstring colName
             .>> spaces
             >>% db.GetColumn columnCase
             <?> (ColumnName colName |> CustomLabel))
         |> List.ofSeq
         |> choice
-    {ColumnNameP=columnP;TableNameP=tableP;DatabaseSchema=db}
+
+    let tableSpecificColumnP table =
+        allCases
+        |> Seq.filter (fun (columnCase:'c) -> db.GetTableName table = db.GetTableNameByColumn columnCase)
+        |> columnParsers
+
+    let columnP = columnParsers allCases
+
+    {ColumnNameP=columnP;TableNameP=tableP;DatabaseSchema=db; TableSpecificColumnNameP=tableSpecificColumnP}
 
 let selectedColumnsP dbParser =
     pchar '*' >>% (getDatabaseColumns<'c> dbParser.DatabaseSchema.GetColumnType |> List.ofSeq)
@@ -266,34 +278,57 @@ let queryP databaseParser =
         >. boolExprP)
     |>> fun ((columns, tables), condition) ->
         {Columns = columns; Condition = condition}
-(*
 
-let insertP databaseParser =
+
+// dbSpecificASTError: in this project will be always ProjectSpecificError.SQLASTError
+// note: this is not specifically "bad" design, but is not elegant either
+// the root cause of this inelegance is that the AST error should not need to know about the actual db schema.
+let insertP dbSchema dbSpecificASTError databaseParser =
     let columnListP =
-        sepBy1 databaseParser.ColumnNameP (pchar ',')
+        sepBy1 databaseParser.ColumnNameP (pchar ',' .>> spaces)
     let valueListP =
-        sepBy1 dataLiteralP (pchar ',')
-    pstringInsensitive "instert into"
+        sepBy1 dataLiteralP (pchar ',' .>> spaces)
+    pstringInsensitive "insert into"
     >.>. databaseParser.TableNameP
-    .>. braceP columnListP
-    .>.> pstringInsensitive "values"
+    |> bindP (fun table ->
+        braceP (
+            sepBy1 (databaseParser.TableSpecificColumnNameP table) (pchar ',' .>> spaces)
+            )
+        |>> (fun col -> table, col)
+    )
+    //.>. braceP columnListP
+    .> pstringInsensitive "values"
     .>. braceP valueListP
     .> pchar ';'
     |> bindP (fun ((table,columns),data) ->
-        let tablesOfColumns =
-            columns
-            |> List.map (fun c -> databaseParser.DatabaseSchema.GetColumnTable c.Col)
-            |> List.distinct
-        match tablesOfColumns, columns, data with
-        // the only OK case...
-        | [singleTable], cols, data when cols.Length = data.Length && singleTable = table ->
-            returnP NoLabelSpecified ()
-        // all the ways this can go wrong
-        | nonSingleTable, _, _ ->
+        let columns = List.map (fun c -> c.Col) columns
+        match InsertStatement.create dbSchema table columns data with
+        | Ok insertStatement -> returnP NoLabelSpecified insertStatement
+        | Error errors ->
+            failP (errors |> dbSpecificASTError |> CustomError)
+            <?> NoLabelSpecified
+        //match columns, data with
+        //| (columns,data) when columns.Length = data.Length ->
+        //    let statement = InsertStatement.create dbSchema table
+        //    returnP NoLabelSpecified ()
+        //| _ ->
+        //    failP (InsertColumnAndDataCountMismatch(columns,data) |> SQLASTError |> CustomError)
+        //    <?> NoLabelSpecified
 
-
-
-
-        )
-
-*)
+    )
+    //|> bindP (fun ((table,columns),data) ->
+    //    let tablesOfColumns =
+    //        columns
+    //        |> List.map (fun c -> databaseParser.DatabaseSchema.GetColumnTable c.Col)
+    //        |> List.distinct
+    //    match tablesOfColumns, columns, data with
+    //    // the only OK case...
+    //    | [singleTable], cols, data when cols.Length = data.Length && singleTable = table ->
+    //        returnP NoLabelSpecified ()
+    //    // all the ways this can go wrong
+    //    | nonSingleTable, _, _ ->
+    //        fail ""
+    //
+    //
+    //
+    //    )

@@ -6,6 +6,10 @@
     <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="WhiteSpacePermutations.fs" />
+    <Compile Include="TestingUtils.fs" />
+    <Compile Include="QueryTests.fs" />
+    <Compile Include="InsertTests.fs" />
     <Compile Include="Sample.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>

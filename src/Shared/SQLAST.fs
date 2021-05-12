@@ -1,5 +1,7 @@
 module SQLAST
 
+open ResultExtensions
+
 type DBType =
     | DBString
     | DBInt
@@ -55,13 +57,14 @@ type ErrorMsg<'column,'table> =
     | AllColumnsMustBeFromTable of expectedTable: 'table * externalColumns: 'column list
     | InsertMustHaveColumns
     | InsertMustContainDistinctColumns of nonDistinct: 'column list
+    | InsertColumnAndDataCountMismatch of columns: 'column list * data: Data list
 
 type DatabaseSchema<'column,'table> = {
     GetColumnTable: 'column -> 'table
     GetTableName: 'table -> string
     GetColumnName: 'column -> string
     GetColumnType: 'column -> DBType
-    } 
+    }
     with
         member this.GetColumn colCase =
             {Col=colCase;Type=this.GetColumnType colCase}
@@ -69,7 +72,7 @@ type DatabaseSchema<'column,'table> = {
             colCase |> this.GetColumnTable |> this.GetTableName
         member this.GetQualifiedColName colCase =
             this.GetTableNameByColumn colCase + "." + (this.GetColumnName colCase)
- 
+
 type QueryStatement<'c> = {
     Columns : Column<'c> list
     Condition : BoolExpr<'c> option
@@ -89,33 +92,53 @@ type InsertStatement<'c,'t> = private {
 
 let ensureMoreThanOneAndUniqueColumns cols =
     match List.distinct cols with
-    | [] -> Error InsertMustHaveColumns
+    | [] -> Error [InsertMustHaveColumns]
     | distinctCols when distinctCols.Length <> cols.Length ->
         let filter = fun c -> Set.ofList distinctCols |> Set.contains c
         cols
         |> List.filter filter
         |> InsertMustContainDistinctColumns
+        |> List.singleton
         |> Error
     | distinctCols -> Ok distinctCols
 
 module InsertStatement =
-    let create dbSchema table (columnsAndDatas: ('c*Data) list) =
-        let columns = List.map fst columnsAndDatas
+    let create dbSchema table columns (datas: Data list ) =
         let distinctCols = ensureMoreThanOneAndUniqueColumns columns
         let columnsFromWrongTable =
             columns
             |> List.filter (fun c -> dbSchema.GetColumnTable c <> table)
-        match columnsFromWrongTable, distinctCols with
-        // the only OK case...
-        | [], Ok _ ->
+            |> function
+                | [] -> Ok ()
+                | externalColumns -> [AllColumnsMustBeFromTable (table, externalColumns)] |> Error
+
+        let columnsAndDatas =
+            match columns, datas with
+            | (columns, datas) when columns.Length = datas.Length ->
+                List.zip columns datas |> Ok
+            | _ -> [InsertColumnAndDataCountMismatch(columns, datas)] |> Error
+
+        let createFromVerified _ columnsAndDatas _ =
             columnsAndDatas
             |> List.map (fun (c, d) -> {Column=dbSchema.GetColumn c;Value=d})
             |> fun inserts -> {Columns=inserts;Table=table}
-            |> Ok
-        // all the ways this can go wrong
-        | [], Error e -> Error [e]
-        | externalColumns, Error e ->
-            [AllColumnsMustBeFromTable (table, externalColumns);e] |> Error
-        | externalColumns, Ok _ -> [AllColumnsMustBeFromTable (table, externalColumns)] |> Error
+
+        createFromVerified
+        <!> distinctCols
+        <*> columnsAndDatas
+        <*> columnsFromWrongTable
+
+        //match columnsFromWrongTable, distinctCols, columnsAndDatas with
+        //// the only OK case...
+        //| [], Ok _, Ok columnsAndDatas ->
+        //    columnsAndDatas
+        //    |> List.map (fun (c, d) -> {Column=dbSchema.GetColumn c;Value=d})
+        //    |> fun inserts -> {Columns=inserts;Table=table}
+        //    |> Ok
+        //// all the ways this can go wrong
+        //| [], Error distinctError, Error colDataError -> Error [distinctError; colDataError]
+        //| externalColumns, Error e ->
+        //    [AllColumnsMustBeFromTable (table, externalColumns);e] |> Error
+        //| externalColumns, Ok _ -> [AllColumnsMustBeFromTable (table, externalColumns)] |> Error
     let cols statement = statement.Columns
     let table statement = statement.Table

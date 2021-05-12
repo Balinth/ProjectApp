@@ -2,9 +2,9 @@ module ParserCombinator
 (*
 Adapted from Sctott Wlaschin's excellent blog series:
 Understanding parser combinators: https://fsharpforfunandprofit.com/posts/understanding-parser-combinators/
-Main modifications: 
+Main modifications:
     *Typed base parser errors (eg.: no more input, etc), also delegates parser labeling. (eg no auto generated string labels)
-    *nextChar returns None instead of '\n' at end of file, if there was no closing new line. Note: this is not strictrly a bugfix, as Scott Wlaschin saw this as a feature in the original implementation. 
+    *nextChar returns None instead of '\n' at end of file, if there was no closing new line. Note: this is not strictrly a bugfix, as Scott Wlaschin saw this as a feature in the original implementation.
     *many combinator is optimised to use constant stack count
 *)
 
@@ -36,6 +36,7 @@ type BasicParserError =
     | Int32Overflow of string
     | Float64Overflow of string
     | NonFatal of BasicParserError
+    | CustomError of ProjectSpecificError
     //| CustomError of ProjectSpecificError
 
 module TextInput =
@@ -46,28 +47,28 @@ module TextInput =
         Column : int
         CharIndex: int
     }
-    
+
     let initialPos = {Line=0; Column=0; CharIndex=0}
 
-    let incrCol pos = 
+    let incrCol pos =
         {pos with Column=pos.Column + 1; CharIndex=pos.CharIndex+1}
 
-    let incrLine pos = 
+    let incrLine pos =
         {Line=pos.Line + 1; Column=0; CharIndex = pos.CharIndex+1}
 
     type InputState = {
         Lines : string[]
-        Position : Position 
+        Position : Position
     }
 
-    let currentLine inputState = 
+    let currentLine inputState =
         let linePos = inputState.Position.Line
         if linePos < inputState.Lines.Length then
             inputState.Lines.[linePos]
         else
             "end of file"
 
-    let fromStr str = 
+    let fromStr str =
         if String.IsNullOrEmpty(str) then
             {Lines=[||]; Position=initialPos}
         else
@@ -88,7 +89,7 @@ module TextInput =
             let currentLine = currentLine input
             if colPos < currentLine.Length then
                 let char = currentLine.[colPos]
-                let newPos = incrCol input.Position 
+                let newPos = incrCol input.Position
                 let newState = {input with Position=newPos}
                 newState, Some char
             else
@@ -98,7 +99,7 @@ module TextInput =
                 else
                     // end of intermediate line, so return LF and move to next line
                     let char = '\n'
-                    let newPos = incrLine input.Position 
+                    let newPos = incrLine input.Position
                     let newState = {input with Position=newPos}
                     newState, Some char
 
@@ -126,15 +127,15 @@ type ParserResult<'a,'parserLabel,'parserError> =
 /// A Parser structure has a parsing function & label
 type Parser<'a,'parserLabel,'parserError> = {
     ParseFn : (Input -> ParserResult<'a,'parserLabel,'parserError>)
-    Label:  'parserLabel 
+    Label:  'parserLabel
     }
 
 /// Run the parser on a InputState
-let runOnInput parser input = 
+let runOnInput parser input =
     parser.ParseFn input
 
 /// Run the parser on a string
-let run parser inputStr = 
+let run parser inputStr =
     TextInput.fromStr inputStr
     |> runOnInput parser
 
@@ -151,7 +152,7 @@ let parserPositionFromInputState (inputState:Input) = {
 
 let printResult labelPrinter errorPrinter result =
     match result with
-    | Ok (value,input) -> 
+    | Ok (value,input) ->
         printfn "%A" value
     | Error (label,error,parserPos) ->
         let label = labelPrinter label
@@ -164,29 +165,29 @@ let printResult labelPrinter errorPrinter result =
         //   sprintf "%*s^%s" 0 "" "test"
         //   sprintf "%*s^%s" 10 "" "test"
         printfn "Line:%i Col:%i Error parsing %s\n%s\n%s"
-            linePos colPos label errorLine failureCaret 
+            linePos colPos label errorLine failureCaret
 
 // =============================================
 // Label related
 // =============================================
 
 /// get the label from a parser
-let getLabel parser = 
+let getLabel parser =
     // get label
     parser.Label
 
 /// update the label in the parser
-let setLabel parser newLabel = 
+let setLabel parser newLabel =
     // change the inner function to use the new label
-    let newInnerFn input = 
+    let newInnerFn input =
         let result = parser.ParseFn input
         match result with
         | Ok s ->
             // if Success, do nothing
-            Ok s 
-        | Error (oldLabel,err,pos) -> 
+            Ok s
+        | Error (oldLabel,err,pos) ->
             // if Failure, return new label
-            Error (newLabel,err,pos) 
+            Error (newLabel,err,pos)
     // return the Parser
     {ParseFn=newInnerFn; Label=newLabel}
 
@@ -211,13 +212,13 @@ let getPosP =
 /// Match an input token if the predicate is satisfied
 let satisfy predicate label =
     let innerFn input =
-        let remainingInput,charOpt = TextInput.nextChar input 
+        let remainingInput,charOpt = TextInput.nextChar input
         match charOpt with
-        | None -> 
+        | None ->
             let err = NoMoreInput
             let pos = parserPositionFromInputState input
             Error (label,err,pos)
-        | Some first -> 
+        | Some first ->
             if predicate first then
                 Ok (first,remainingInput)
             else
@@ -239,11 +240,11 @@ let attemptP p =
 /// and passes the output of p into f, to create a new parser
 let bindP f p =
     let innerFn input =
-        let result1 = runOnInput p input 
+        let result1 = runOnInput p input
         match result1 with
-        | Error (label,err,pos) -> 
+        | Error (label,err,pos) ->
             // return error from parser1
-            Error (label,err,pos)  
+            Error (label,err,pos)
         | Ok (value1,remainingInput) ->
             // apply f to get a new parser
             let p2 = f value1
@@ -253,16 +254,16 @@ let bindP f p =
 
 let mapErrorP f p =
     let innerFn input =
-        let result1 = runOnInput p input 
+        let result1 = runOnInput p input
         match result1 with
-        | Error (label,err,pos) -> 
+        | Error (label,err,pos) ->
             // apply f to get the new error msg
             let newErr = f err
             // run parser with remaining input
             Error(label,newErr,pos)
         | Ok (value1,remainingInput) ->
             // return successfull value from parser1
-            Ok (value1,remainingInput) 
+            Ok (value1,remainingInput)
     {ParseFn=innerFn; Label=getLabel p}
 
 let mapLabel f p =
@@ -271,8 +272,8 @@ let mapLabel f p =
         match result1 with
         | Ok (value1,remainingInput) ->
             // return successfull value from parser1
-            Ok (value1,remainingInput) 
-        | Error (label,err,pos) -> 
+            Ok (value1,remainingInput)
+        | Error (label,err,pos) ->
             // apply f to get the new error msg
             let newLabel = f label
             // run parser with remaining input
@@ -283,7 +284,7 @@ let mapLabel f p =
 let ( >>= ) p f = bindP f p
 
 /// Lift a value to a Parser
-let returnP label x = 
+let returnP label x =
     let innerFn input =
         // ignore the input and return x
         Ok (x,input)
@@ -296,7 +297,7 @@ let failP errorMsg =
     {ParseFn=innerFn;Label=()}
 
 /// apply a function to the value inside a parser
-let mapP f p = 
+let mapP f p =
     bindP (f >> returnP (getLabel p)) p
 
 /// infix version of mapP
@@ -306,9 +307,9 @@ let ( <!> ) = mapP
 let ( |>> ) x f = mapP f x
 
 /// apply a wrapped function to a wrapped value
-let applyP fP xP =         
-    (fP) >>= (fun f -> 
-    (xP) >>= (fun x -> 
+let applyP fP xP =
+    (fP) >>= (fun f ->
+    (xP) >>= (fun x ->
         returnP (getLabel fP) (f x) ))
 
 /// infix version of apply
@@ -319,13 +320,13 @@ let lift2 labelFun f xP yP =
     returnP (labelFun (getLabel xP) (getLabel yP)) f <*> xP <*> yP
 
 /// Combine two parsers as "A andThen B"
-let andThen p1 p2 =         
+let andThen p1 p2 =
     let label = AndThen ((getLabel p1), (getLabel p2))
-    p1 >>= (fun p1Result -> 
-    p2 >>= (fun p2Result -> 
+    p1 >>= (fun p1Result ->
+    p2 >>= (fun p2Result ->
         returnP label (p1Result,p2Result) ))
     <?> label
-    
+
 /// Infix version of andThen
 let ( .>>. ) = andThen
 
@@ -339,10 +340,10 @@ let orElse p1 p2 =
         let result1 = runOnInput p1 input
         // test the result for Failure/Success
         match result1 with
-        | Ok _ -> 
+        | Ok _ ->
             // if success, return the original result
             result1
-        | Error (label,err,pos) when startingPos.CharIndex = pos.CharIndex -> 
+        | Error (label,err,pos) when startingPos.CharIndex = pos.CharIndex ->
             // if failed without consuming input, run parser2 with the input
             let result2 = runOnInput p2 input
             // return parser2's result, overwriting label if it still failed
@@ -379,7 +380,7 @@ let rec sequence parserList =
     let consP = lift2 (fun a b -> AndThen (a,b)) cons
     // process the list of parsers recursively
     match parserList with
-    | [] -> 
+    | [] ->
         returnP EmptySequence []
     | head::tail ->
         consP head (sequence tail)
@@ -394,7 +395,7 @@ let rec parseZeroOrMore values parser input =
         parseZeroOrMore (newValue::values) parser remainingInput
 
 /// matches zero or more occurences of the specified parser
-let many parser = 
+let many parser =
     let rec innerFn input =
         // parse the input -- wrap in Success as it always succeeds
         let values, input = parseZeroOrMore [] parser input
@@ -403,8 +404,8 @@ let many parser =
 
 /// matches one or more occurences of the specified parser
 let many1 p =
-    p >>= (fun head -> 
-    many p >>= (fun tail -> 
+    p >>= (fun head ->
+    many p >>= (fun tail ->
         returnP (Many (getLabel p)) (head::tail) ))
     <?> (Many (getLabel p))
 
@@ -416,18 +417,18 @@ let opt p =
     some <|> none <?> label
 
 /// Keep only the result of the left side parser
-let (.>>) p1 p2 = 
+let (.>>) p1 p2 =
     // create a pair
     p1 .>>. p2
     // then only keep the first value
-    |> mapP (fun (a,b) -> a) 
+    |> mapP (fun (a,b) -> a)
 
 /// Keep only the result of the right side parser
-let (>>.) p1 p2 = 
+let (>>.) p1 p2 =
     // create a pair
     p1 .>>. p2
     // then only keep the second value
-    |> mapP (fun (a,b) -> b) 
+    |> mapP (fun (a,b) -> b)
 
 /// Keep only the result of the middle parser
 let between p1 p2 p3 =
@@ -435,7 +436,7 @@ let between p1 p2 p3 =
 
 /// Parses one or more occurrences of p separated by sep
 let sepBy1 p sep =
-    let sepThenP = sep >>. p           
+    let sepThenP = sep >>. p
     p .>>. (many sepThenP )
     |>> fun (p,pList) -> p::pList
 
@@ -444,33 +445,33 @@ let sepBy p sep =
     (sepBy1 p sep) <|> (returnP (getLabel p |> Optional) [])
 
 // =============================================
-// Standard parsers 
+// Standard parsers
 // =============================================
 
 
 // ------------------------------
 // char and string parsing
 // ------------------------------
-            
-/// parse a char 
-let pchar charToMatch = 
-    // label is just the character
-    let label = BasicLabel.Char charToMatch 
 
-    let predicate ch = (ch = charToMatch) 
-    satisfy predicate label 
+/// parse a char
+let pchar charToMatch =
+    // label is just the character
+    let label = BasicLabel.Char charToMatch
+
+    let predicate ch = (ch = charToMatch)
+    satisfy predicate label
 
 /// Choose any of a list of characters
-let anyOf listOfChars = 
+let anyOf listOfChars =
     listOfChars
     |> List.map pchar // convert into parsers
     |> choice
 
 /// Convert a list of chars to a string
 let charListToStr charList =
-    System.String(List.toArray charList) 
+    System.String(List.toArray charList)
 
-/// Parses a sequence of zero or more chars with the char parser cp. 
+/// Parses a sequence of zero or more chars with the char parser cp.
 /// It returns the parsed chars as a string.
 let manyChars cp =
     many cp
@@ -483,22 +484,22 @@ let testStr =
     |> ignore
     sb.ToString()
 
-/// Parses a sequence of one or more chars with the char parser cp. 
+/// Parses a sequence of one or more chars with the char parser cp.
 /// It returns the parsed chars as a string.
 let manyChars1 cp =
     many1 cp
     |>> charListToStr
 
 /// parse a specific string
-let pstring str = 
+let pstring str =
     // label is just the string
-    let label = BasicLabel.String str 
+    let label = BasicLabel.String str
 
     str
     // convert to list of char
     |> List.ofSeq
     // map each char to a pchar
-    |> List.map pchar 
+    |> List.map pchar
     // convert to Parser<char list>
     |> sequence
     // convert Parser<char list> to Parser<string>
@@ -514,7 +515,7 @@ let pstringInsensitive str =
     // convert to list of char
     |> List.ofSeq
     // map each char to a pchar
-    |> List.map (fun c -> pchar (System.Char.ToLower(c)) <|> pchar (System.Char.ToUpper(c))) 
+    |> List.map (fun c -> pchar (System.Char.ToLower(c)) <|> pchar (System.Char.ToUpper(c)))
     // convert to Parser<char list>
     |> sequence
     // convert Parser<char list> to Parser<string>
@@ -527,8 +528,8 @@ let pstringInsensitive str =
 // ------------------------------
 
 /// parse a whitespace char
-let whitespaceChar = 
-    let predicate = Char.IsWhiteSpace 
+let whitespaceChar =
+    let predicate = Char.IsWhiteSpace
     satisfy predicate WhiteSpace
 
 /// parse zero or more whitespace char
@@ -544,9 +545,9 @@ let spaces1 = many1 whitespaceChar
 // ------------------------------
 
 /// parse a digit
-let digitChar = 
+let digitChar =
     let predicate = Char.IsDigit
-    satisfy predicate DigitChar 
+    satisfy predicate DigitChar
 
 
 // parse an integer
@@ -558,12 +559,12 @@ let pint =
         | false, _ -> Int32Overflow digits |> failP <?> Integer
         | _, Some ch -> returnP Integer -i  // negate the int
         | _, None -> returnP Integer i
-            
+
     // define parser for one or more digits
     let digits = manyChars1 digitChar
 
     // an "int" is optional sign + one or more digits
-    opt (pchar '-') .>>. digits 
+    opt (pchar '-') .>>. digits
     >>= resultToInt
     <?> Integer
 
@@ -577,29 +578,29 @@ let pfloat =
         | false, _ -> Float64Overflow floatStr |> failP <?> Float
         | _, Some ch ->  returnP Float -fl  // negate the float
         | _, None ->  returnP Float fl
-            
-    // define parser for one or more digits 
-    let digits = manyChars1 (digitChar <|> whitespaceChar ) 
+
+    // define parser for one or more digits
+    let digits = manyChars1 (digitChar <|> whitespaceChar )
     // a float is sign, digits, point, digits (ignore exponents for now)
     let signP = opt (pchar '-')
     let decimalPointP = (pchar '.') <|> (pchar ',')
-    signP .>>. digits .>>. decimalPointP .>>. digits 
+    signP .>>. digits .>>. decimalPointP .>>. digits
     >>= resultToFloat <?> Float
-    
+
 // helper function for recursive parser definitions
 let createParserForwardedToRef<'a,'parserError>() =
 
-    let dummyParser= 
+    let dummyParser=
         let innerFn input : ParserResult<'a,'parserLabel,'parserError> = failwith "unfixed forwarded parser"
         {ParseFn=innerFn; Label=Recursive}
-    
+
     // ref to placeholder Parser
-    let parserRef = ref dummyParser 
+    let parserRef = ref dummyParser
 
     // wrapper Parser
-    let innerFn input = 
+    let innerFn input =
         // forward input to the placeholder
-        runOnInput !parserRef input 
+        runOnInput !parserRef input
     let wrapperParser = {ParseFn=innerFn; Label=Recursive}
 
     wrapperParser, parserRef

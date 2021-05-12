@@ -24,6 +24,7 @@ open SQLAST
 open SQLGenerator
 open DatabaseSchema
 open Security
+open ProjectSpecificLabels
 
 let connectionString =
     SQLiteConnectionStringBuilder(
@@ -249,6 +250,11 @@ let queryUserNameTaken userName =
     >>= executeQuery
     |>> (fun objs -> objs.Count() = 1)
 
+let createInsert table columnsAndData =
+    let columns = List.map fst columnsAndData
+    let data = List.map snd columnsAndData
+    InsertStatement.create projectAppDBSchema table columns data
+
 let register (registerInfo:RegisterInfo) : RegistrationResult =
     System.Environment.GetEnvironmentVariables().Keys
     |> Seq.cast
@@ -263,7 +269,7 @@ let register (registerInfo:RegisterInfo) : RegistrationResult =
             UserCol UserNameID, Guid.NewGuid().ToString() |> String
         ]
         let insertUserResult =
-            InsertStatement.create projectAppDBSchema UserTable insertUserValues
+            createInsert UserTable insertUserValues
             >>= stringizeSQLInsert projectAppDBSchema
             |> Result.mapError (fun eList -> List.map SQLError eList)
             >>= executeInsert projectAppDBSchema
@@ -285,7 +291,7 @@ let register (registerInfo:RegisterInfo) : RegistrationResult =
             result {
             let! dbUser = getUserByName registerInfo.UserName |> alwaysOneQuery
             let! insertStatement =
-                InsertStatement.create projectAppDBSchema LocalAuthenticationTable [
+                createInsert LocalAuthenticationTable [
                     LocalAuthenticationCol User_ID, dbUser.UserID |> Int
                     LocalAuthenticationCol PasswordHash, base64 passwordHash |> String
                     LocalAuthenticationCol Salt, base64 salt |> String
@@ -333,7 +339,7 @@ let insertUser (user:UserInfo) =
         UserCol FamilyName, user.FamilyName |> String
     ]
     //let insertStatement =
-    InsertStatement.create projectAppDBSchema UserTable insertValues
+    createInsert UserTable insertValues
     >>= stringizeSQLInsert projectAppDBSchema
     |> Result.mapError (fun eList -> List.map SQLError eList)
     >>= executeInsert projectAppDBSchema

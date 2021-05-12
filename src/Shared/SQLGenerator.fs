@@ -122,6 +122,10 @@ let stringizeSQLQuery db (query:QueryStatement<'c>)  =
         | None -> Ok ("", [])
     map2 select where (fun s w -> (s + Environment.NewLine + fst w), snd w)
 
+
+let stringizeInsertParameterName db param =
+    "@"  + (db.GetColumnName param.Column.Col)
+
 let stringizeSQLInsert db statement =
     let cols =
         InsertStatement.cols statement
@@ -132,9 +136,9 @@ let stringizeSQLInsert db statement =
         |> List.reduce (fun sum c -> sum + "," + c)
     let colParams =
         cols
-        |> List.map (fun c -> "@"  + (db.GetColumnName c.Column.Col))
+        |> List.map (stringizeInsertParameterName db)
         |> List.reduce (fun sum c -> sum + "," + c)
-    let sqlStr = "INSERT INTO " + (InsertStatement.table statement |> db.GetTableName) + " (" + columns + ") VALUES (" + colParams + ")"
+    let sqlStr = "INSERT INTO " + (InsertStatement.table statement |> db.GetTableName) + " (" + columns + ") VALUES (" + colParams + ");"
     Ok (sqlStr, InsertStatement.cols statement)
 
 (*
