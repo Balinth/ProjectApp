@@ -21,11 +21,11 @@
     <Compile Include="Version.fs" />
     <Compile Include="Column.fs" />
     <Compile Include="DataTable.fs" />
-    <Compile Include="TableComponent.fs" />
     <Compile Include="CommonView.fs" />
     <Compile Include="Login.fs" />
     <Compile Include="UserDetails.fs" />
     <Compile Include="Register.fs" />
+    <Compile Include="Query.fs" />
     <Compile Include="Client.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

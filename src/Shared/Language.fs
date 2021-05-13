@@ -25,6 +25,7 @@ type LStr =
     | Email
     | InvalidEmail
     | User
+    | Query
     | ValidationError of Validation.ValidationError
     | ClientError of ClientError
     | APIError of APIError
@@ -50,6 +51,7 @@ let rec englishString mlString =
     | FamilyName -> "Family name"
     | Email -> "Email"
     | InvalidEmail -> "Invalid email"
+    | Query -> "Query"
     | ValidationError err ->
         match err with
         | NoWhitespace -> "No whitespaces!"
@@ -140,6 +142,7 @@ let rec hungarianString mlString =
     | FamilyName -> "Vezetéknév"
     | Email -> "Email"
     | InvalidEmail -> "Hibás email"
+    | Query -> "Lekérdezés"
     | ValidationError err ->
         match err with
         | NoWhitespace -> "Nem lehet szóköz!"

@@ -4,6 +4,7 @@ open System
 
 open DatabaseSchema
 open DynamicTable
+open ParserCombinator
 
 type Counter = { Value : int }
 
@@ -51,6 +52,8 @@ type DBError<'column,'table> =
 type APIError =
     | AuthError of AuthError
     | DBError of DBError<ProjectAppCol,ProjectAppTable>
+    | ParserError of BasicLabel*BasicParserError*ParserPosition
+    | UnexpectedError of exn
 
 type RegistrationError =
     | UserNameTaken
@@ -68,6 +71,8 @@ type UserName = UserName of string
 type RegistrationResult = Result<UserName,RegistrationError>
 
 type UserInfoResult = Result<UserInfo,APIError list>
+
+type QueryResult = Result<DynamicTable<ProjectAppCol>,APIError list>
 
 type SecureRequest<'t> = {
     Token : string
@@ -87,5 +92,6 @@ type ISecureAPI = {
     register : RegisterInfo -> Async<RegistrationResult>
     login : LoginInfo -> Async<LoginResult>
     getUserDetails : SecureRequest<unit> -> SecureResponse<UserInfoResult>
+    query : SecureRequest<string> -> SecureResponse<QueryResult>
 }
 

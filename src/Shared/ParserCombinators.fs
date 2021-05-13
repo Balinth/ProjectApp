@@ -37,7 +37,6 @@ type BasicParserError =
     | Float64Overflow of string
     | NonFatal of BasicParserError
     | CustomError of ProjectSpecificError
-    //| CustomError of ProjectSpecificError
 
 module TextInput =
     open System

@@ -19,6 +19,7 @@
     <Compile Include="../Shared/Language.fs" />
     <Compile Include="Security.fs" />
     <Compile Include="DatabaseAccess.fs" />
+    <Compile Include="DynamicDBAccess.fs" />
     <Compile Include="Server.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

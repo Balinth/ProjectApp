@@ -17,6 +17,8 @@ open PrimeReact.DataTable
 open Shared
 open Language
 open Validation
+open DatabaseSchema
+open DynamicTable
 
 // The model holds data that you want to keep track of while the application is running
 // in this case, we are keeping track of a counter
@@ -28,15 +30,11 @@ type UserModel = {
     Token : Token
 }
 
-type QueryPage = {
-    Table: TableComponent.Model
-}
-
 type SubPageModel =
     | UserPage
     | LoginPage of Login.Model
     | RegisterPage of Register.Model
-    | QueryPage of QueryPage
+    | QueryPage of Query.Model
 
 type ChangePage =
     | ToUserPage
@@ -47,9 +45,10 @@ type ChangePage =
 type SubPageMsg =
     | LoginPageMsg of Login.Msg
     | RegisterPageMsg of Register.Msg
+    | QueryPageMsg of Query.Msg
 
 type Model = {
-    Language : Language.LStr -> string
+    Language : Language//.LStr -> string
     User : UserModel option
     SubPage : SubPageModel
 }
@@ -61,7 +60,6 @@ type Msg =
     | ChangePage of ChangePage
     | SubPageMsg of SubPageMsg
     | Logout
-    | TableMsg of TableComponent.Msg
     | LoginSuccess of token:Token * user: UserInfo
     | LoginFailed of LoginError
     | RegistrationSuccess of UserName
@@ -83,6 +81,7 @@ module Server =
 let loginAPI = Server.api.login
 let registerAPI = Server.api.register
 let getUser = Server.api.getUserDetails
+let queryAPI = Server.api.query
 //let getTable = Server.api.getTable
 
 let secureRequestNaked fn token input =
@@ -106,7 +105,7 @@ let secureRequest fn token input =
 
 // defines the initial state and initial command (= side-effect) of the application
 let init () : Model * Cmd<Msg> =
-    let initialModel = { Language = getMLString English; User = None; SubPage = RegisterPage Register.init}
+    let initialModel = { Language = English; User = None; SubPage = RegisterPage Register.init}
     initialModel, Cmd.none
 
 let cmdExnHandler toMsg exn =
@@ -134,24 +133,15 @@ let errorToast lng error : Cmd<_> =
 // these commands in turn, can dispatch messages to which the update function will react.
 let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     let errorToastTmp = errorToast id
-    let errorToast = errorToast currentModel.Language
+    let errorToast = errorToast (getMLString currentModel.Language)
     match msg with
     | ChangeLanguage l ->
-        {currentModel with Language = Language.getMLString l}, Cmd.none
-    | TableMsg msg ->
-        match currentModel.SubPage with
-        | QueryPage queryPage ->
-            let compUpdate = TableComponent.update msg queryPage.Table
-            // for testing only
-            let err = sprintf "TableMsg: %A" msg
-            Fable.Core.JS.console.error err
-            {currentModel with SubPage = QueryPage {queryPage with  Table = fst compUpdate }}, snd compUpdate |> Cmd.map TableMsg
-        | _ -> currentModel, Cmd.none
+        {currentModel with Language = l}, Cmd.none
     | ChangePage page ->
         match page, currentModel.User with
         | ToUserPage, Some _ -> {currentModel with SubPage=UserPage}, Cmd.none
         | ToUserPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
-        | ToQueryPage, Some _ -> {currentModel with SubPage=QueryPage {Table = {Table = None}}}, Cmd.none
+        | ToQueryPage, Some _ -> {currentModel with SubPage=QueryPage Query.init}, Cmd.none
         | ToQueryPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToLoginPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToLoginPage, Some _ -> {currentModel with SubPage=LoginPage Login.init}, Cmd.ofMsg Logout
@@ -160,15 +150,25 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     | Logout -> {currentModel with User=None}, ToLoginPage |> ChangePage |> Cmd.ofMsg
     | SubPageMsg subPageMsg ->
             let newSubpageModel, cmds =
-                match subPageMsg, currentModel.SubPage with
-                | LoginPageMsg loginPageMsg, LoginPage loginPage ->
+                match subPageMsg, currentModel.SubPage, currentModel.User with
+                | LoginPageMsg loginPageMsg, LoginPage loginPage, _ ->
                     let model, (cmd:Cmd<Msg>) = Login.update login LoginSuccess LoginFailed (LoginPageMsg >> SubPageMsg) loginPageMsg loginPage
                     LoginPage model, cmd
-                | LoginPageMsg _, someOtherSubpage -> someOtherSubpage, Cmd.none
-                | RegisterPageMsg registerPageMsg, RegisterPage registerPage ->
+                | LoginPageMsg _, someOtherSubpage, _ -> someOtherSubpage, Cmd.none
+                | RegisterPageMsg registerPageMsg, RegisterPage registerPage, _ ->
                     let model, cmd = Register.update register RegistrationSuccess RegistrationFailed (RegisterPageMsg >> SubPageMsg) registerPageMsg registerPage
                     RegisterPage model, cmd
-                | RegisterPageMsg _, someOtherSubpage -> someOtherSubpage, Cmd.none
+                | RegisterPageMsg _, someOtherSubpage, _ -> someOtherSubpage, Cmd.none
+                | QueryPageMsg _, QueryPage currentModel, None -> QueryPage currentModel, Cmd.ofMsg (ChangePage ToLoginPage)
+                | QueryPageMsg queryMsg, QueryPage queryPage, Some user ->
+                    let query = secureRequest queryAPI user.Token
+                    let model, cmd = Query.update query queryMsg queryPage
+                    // for testing only
+                    //let err = sprintf "TableMsg: %A" msg
+                    //Fable.Core.JS.console.error err
+                    QueryPage model, cmd |> Cmd.map (QueryPageMsg >> SubPageMsg)
+                    //QueryPage queryPage, Cmd.ofMsg (ChangePage ToLoginPage)
+                | QueryPageMsg _, someOtherSubpage, _ -> someOtherSubpage, Cmd.none
             {currentModel with SubPage = newSubpageModel},cmds
     //| APIErrors(_) -> failwith "Not Implemented"
     | LoginSuccess (token, user) ->
@@ -182,40 +182,6 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
         currentModel ,Cmd.batch [
             errorToast (LStr.RegistrationError error)
         ]
-
-let tableDataFromDynTable (dynTable : DynamicTable._T) =
-    dynTable.Rows
-    |> List.map (fun row ->
-        List.map2 (fun data header ->
-            header ==>
-                match data with
-                | DynamicTable.Data.Int int -> string int
-                | DynamicTable.Data.String str -> str
-                | DynamicTable.Data.Float float -> string float) row.Data dynTable.Header
-        |> createObj)
-    |> ResizeArray
-
-
-let tableHeader (dynTable : DynamicTable._T) =
-    let fields = List.map ColProps.Field dynTable.Header
-    let headers = List.map ColProps.Header dynTable.Header
-    List.map2 (fun field head -> PrimeReact.Column.ColBuilder [field; head; ColProps.Sortable true ]) fields headers
-    |> Seq.ofList
-
-let tableView (model : QueryPage) dispatch =
-    match model.Table.Table with
-    | Some table ->
-        let data = tableDataFromDynTable table
-        Box.box' [] [
-            DataTableBuilder [
-                DataTableProps.Header (Some ["Table View test"])
-                DataTableProps.Value (data)
-                ]
-                (tableHeader table)
-        ]
-    | None ->
-        div [ ] [str "No table..."]
-
 
 let safeComponents =
     let components =
@@ -249,15 +215,25 @@ let showUser lString user =
     | Some user -> user.UserName
     | None -> lString Language.Login
 
-let navbarItemRaw dispatch str msg =
+let navbarItemRaw dispatch str icon msg =
+    Navbar.Item.a [ Navbar.Item.Option.Props [ OnClick(fun _ -> dispatch (msg)) ] ]
+        [ str; icon ]
+
+let navbarItemRawSimple dispatch str msg =
     Navbar.Item.a [ Navbar.Item.Option.Props [ OnClick(fun _ -> dispatch (msg)) ] ]
         [ str ]
 
 let userPage (user:UserInfo) =
     str user.PrimaryEmail
 
-let navBrand lStr (user:UserInfo option) dispatch =
-    let navbarItem = fun s p -> (navbarItemRaw dispatch (str s) p)
+let navBrand currentLang (user:UserInfo option) dispatch =
+    let lStr = getMLString currentLang
+    let languageSwitch =
+        match currentLang with
+        | English -> "Hungarian", ChangeLanguage Hungarian
+        | Hungarian -> "English", ChangeLanguage English
+    let navbarItem = fun s p -> (navbarItemRawSimple dispatch (str s) p)
+    let navbarItemIcon = fun s icon p -> (navbarItemRaw dispatch (str s) icon p)
     Navbar.navbar [ Navbar.Color IsWhite ]
         [ Container.container [ ]
             [ Navbar.Brand.div [ ]
@@ -269,6 +245,7 @@ let navBrand lStr (user:UserInfo option) dispatch =
                             (match user with
                             | Some user -> [
                                     navbarItem user.UserName (ChangePage ToUserPage)
+                                    navbarItem (lStr LStr.Query) (ChangePage ToQueryPage)
                                     navbarItem (lStr LStr.Logout) (Logout)
                                 ]
                             | None -> [
@@ -281,10 +258,11 @@ let navBrand lStr (user:UserInfo option) dispatch =
                                     [ str "Orders" ]
                                 Navbar.Item.a [ ]
                                     [ str "Payments" ]
-                                Navbar.Item.a [ ]
-                                    [ str "Exceptions" ]
                             ]
                         ])
+                    Navbar.End.div [] [
+                        navbarItemIcon (fst languageSwitch) (Icon.icon [ ] [ Fa.i [ Fa.Solid.Globe ] [] ]) (snd languageSwitch)
+                    ]
                    ]
                 ]
             ]
@@ -463,11 +441,12 @@ let columns (model : Model) (dispatch : Msg -> unit) =
                             [ counter model dispatch ] ] ]   ] ]
 
 let subPageView model dispatch =
+    let lStr = getMLString model.Language
     match model.SubPage with
-    | QueryPage queryPage -> tableView queryPage dispatch
-    | UserPage -> UserDetails.view model.Language ((model.User |> Option.map (fun u -> u.User))) dispatch
-    | LoginPage logPage -> Login.view logPage model.Language (LoginPageMsg >> SubPageMsg >> dispatch)
-    | RegisterPage regPage -> Register.view regPage model.Language (RegisterPageMsg >> SubPageMsg >> dispatch)
+    | QueryPage queryPage -> Query.view queryPage lStr (QueryPageMsg >> SubPageMsg >> dispatch)
+    | UserPage -> UserDetails.view lStr ((model.User |> Option.map (fun u -> u.User))) dispatch
+    | LoginPage logPage -> Login.view logPage lStr (LoginPageMsg >> SubPageMsg >> dispatch)
+    | RegisterPage regPage -> Register.view regPage lStr (RegisterPageMsg >> SubPageMsg >> dispatch)
 
 let view (model : Model) (dispatch : Msg -> unit) =
     div [ ]

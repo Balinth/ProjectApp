@@ -24,6 +24,7 @@ open Fable.Remoting.Giraffe
 open Shared
 open DatabaseAccess
 open ResultExtensions
+open DynamicDBAccess
 
 let liftAsync x = async { return x }
 
@@ -46,6 +47,7 @@ let api : ISecureAPI = {
     register = register >> liftAsync
     login = login >> liftAsync
     getUserDetails = (Security.authorize userInfoFromAuthInfo)
+    query = Security.authorize query
 }
 
 let securedApp =
