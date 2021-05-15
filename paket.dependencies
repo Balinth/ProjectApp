@@ -6,9 +6,8 @@ group Server
 nuget Dapper
     nuget FSharp.Core
     nuget Giraffe
-    nuget Fable.Remoting.Giraffe ~> 3
+    nuget Fable.Remoting.Giraffe ~> 4
 nuget jose-jwt
-    nuget Microsoft.AspNetCore.Authentication.AzureAD.UI
     nuget Microsoft.Extensions.Configuration.Json
     nuget System.Data.SQLite.Core
 
@@ -34,7 +33,7 @@ group Client
     nuget Fable.Elmish.React ~> 3
     nuget Fable.Fetch
     nuget Fable.React ~> 5
-    nuget Fable.Remoting.Client ~> 5
+    nuget Fable.Remoting.Client ~> 7
     nuget Fulma ~> 2
     nuget Fable.FontAwesome.Free ~> 2
 

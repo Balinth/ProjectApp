@@ -7,12 +7,8 @@ open Microsoft.AspNetCore
 open Microsoft.AspNetCore.Http
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Hosting
-open Microsoft.AspNetCore.Authentication
-open Microsoft.AspNetCore.Authentication.AzureAD.UI
-open Microsoft.AspNetCore.Authentication.OpenIdConnect
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Configuration
-open System.IdentityModel.Tokens.Jwt
 open System.Security.Claims
 open Microsoft.AspNetCore.Identity
 
@@ -27,9 +23,6 @@ open ResultExtensions
 open DynamicDBAccess
 
 let liftAsync x = async { return x }
-
-
-JwtSecurityTokenHandler.DefaultMapInboundClaims <- false
 
 let tryGetEnv = System.Environment.GetEnvironmentVariable >> function null | "" -> None | x -> Some x
 let tryGetConfigOr<'a when 'a : null> (config: IConfiguration) key orDo =
