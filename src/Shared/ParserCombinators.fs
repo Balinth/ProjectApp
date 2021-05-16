@@ -11,17 +11,21 @@ Main modifications:
 // Label parametrization is done through ProjectSpecificLabel type.
 // In a different project, a different .fs file containing a different ProjectSpecificLabel can be included.
 open ProjectSpecificLabels
+
 type BasicLabel =
+    | EndOfInput
     | NoLabelSpecified
     | Recursive
     | Attempt of BasicLabel
+    | Sequence of BasicLabel list
     | AndThen of BasicLabel * BasicLabel
     | OrElse of BasicLabel * BasicLabel
+    | Choice of BasicLabel list
     | Many of BasicLabel
     | Optional of BasicLabel
     | String of string
     | CaseInsensitiveString of string
-    | Char of char
+    | Char of string
     | Integer
     | DigitChar
     | Float
@@ -32,7 +36,7 @@ type BasicLabel =
 
 type BasicParserError =
     | NoMoreInput
-    | UnexpectedChar of char
+    | UnexpectedChar of string
     | Int32Overflow of string
     | Float64Overflow of string
     | NonFatal of BasicParserError
@@ -149,23 +153,6 @@ let parserPositionFromInputState (inputState:Input) = {
     CharIndex = inputState.Position.CharIndex
     }
 
-let printResult labelPrinter errorPrinter result =
-    match result with
-    | Ok (value,input) ->
-        printfn "%A" value
-    | Error (label,error,parserPos) ->
-        let label = labelPrinter label
-        let error = errorPrinter error
-        let errorLine = parserPos.CurrentLine
-        let colPos = parserPos.Column
-        let linePos = parserPos.Line
-        let failureCaret = sprintf "%*s^%s" colPos "" error
-        // examples of formatting
-        //   sprintf "%*s^%s" 0 "" "test"
-        //   sprintf "%*s^%s" 10 "" "test"
-        printfn "Line:%i Col:%i Error parsing %s\n%s\n%s"
-            linePos colPos label errorLine failureCaret
-
 // =============================================
 // Label related
 // =============================================
@@ -221,11 +208,23 @@ let satisfy predicate label =
             if predicate first then
                 Ok (first,remainingInput)
             else
-                let err = UnexpectedChar first
+                let err = UnexpectedChar (string first)
                 let pos = parserPositionFromInputState input
                 Error (label,err,pos)
     // return the parser
     {ParseFn=innerFn;Label=label}
+
+let endOfInputP =
+    let innerFn input =
+        let remainingInput,charOpt = TextInput.nextChar input
+        match charOpt with
+        | None ->
+            Ok ((),remainingInput)
+        | Some c ->
+            let pos = parserPositionFromInputState input
+            Error (EndOfInput,UnexpectedChar (string c),pos)
+    // return the parser
+    {ParseFn=innerFn;Label=EndOfInput}
 
 let attemptP p =
     let innerFn input =
@@ -321,10 +320,10 @@ let lift2 labelFun f xP yP =
 /// Combine two parsers as "A andThen B"
 let andThen p1 p2 =
     let label = AndThen ((getLabel p1), (getLabel p2))
-    p1 >>= (fun p1Result ->
-    p2 >>= (fun p2Result ->
+    (p1 ) >>= (fun p1Result ->
+    (p2 <??> label) >>= (fun p2Result ->
         returnP label (p1Result,p2Result) ))
-    <?> label
+    //<??> label
 
 /// Infix version of andThen
 let ( .>>. ) = andThen
@@ -350,16 +349,20 @@ let orElse p1 p2 =
             | Ok _ -> result2
             | Error (_,error,pos) when startingPos.CharIndex = pos.CharIndex -> Error(outerLabel,error,pos)
             | Error (label,error,pos) -> Error(Inside(outerLabel,label),error,pos)
-        | Error (label,NonFatal err,pos) -> // backtrack and still try the second parser if the first failed with nonFatal error.
+        | Error (firstLabel,NonFatal firstErr,firstErrorPos) -> // backtrack and still try the second parser if the first failed with nonFatal error.
             // if failed without consuming input, run parser2 with the input
             let result2 = runOnInput p2 input
             // return parser2's result, overwriting label if it still failed
             match result2 with
             | Ok _ -> result2
-            | Error (_,error,pos) when startingPos.CharIndex = pos.CharIndex -> Error(outerLabel,error,pos)
-            | Error (label,error,pos) -> Error(Inside(outerLabel,label),error,pos)
+            | Error (_,error,secondErrorPos) when startingPos.CharIndex = secondErrorPos.CharIndex ->
+                Error(Inside(outerLabel, firstLabel),NonFatal firstErr,firstErrorPos)
+            | Error (secondLabel,secondError,secondErrorPos) when firstErrorPos.CharIndex > secondErrorPos.CharIndex ->
+                Error(Inside(outerLabel,firstLabel),NonFatal firstErr,firstErrorPos)
+            | Error (secondLabel,secondError,secondErrorPos) ->
+                Error(Inside(outerLabel,secondLabel),secondError,secondErrorPos)
         | Error (label,err,pos) -> // fail if the first parser failed after consuming input
-            printfn "startPos: %A currPos: %A" startingPos pos
+            //printfn "startPos: %A currPos: %A" startingPos pos
             Error(Inside (outerLabel,label),err,pos)
     // return the inner function
     {ParseFn=innerFn; Label=outerLabel}
@@ -455,7 +458,7 @@ let sepBy p sep =
 /// parse a char
 let pchar charToMatch =
     // label is just the character
-    let label = BasicLabel.Char charToMatch
+    let label = BasicLabel.Char (string charToMatch)
 
     let predicate ch = (ch = charToMatch)
     satisfy predicate label
@@ -475,13 +478,6 @@ let charListToStr charList =
 let manyChars cp =
     many cp
     |>> charListToStr
-
-let testStr =
-    let sb = System.Text.StringBuilder()
-    [0..50000]
-    |> List.map (fun _ -> sb.Append("a"))
-    |> ignore
-    sb.ToString()
 
 /// Parses a sequence of one or more chars with the char parser cp.
 /// It returns the parsed chars as a string.
@@ -617,3 +613,59 @@ let treeP =
 nodePRef := pstring "node" .>>. treeP .>>. treeP |>> (fun ((a,b),c) -> Node (a, b, c)) <?> "node"
 run treeP "nodeleafnodeleafleaf"
 *)
+
+let rec simplifyAndThensLabel label : BasicLabel =
+    match label with
+    | EndOfInput
+    | NoLabelSpecified
+    | Recursive
+    | Integer
+    | Float
+    | EmptySequence
+    | WhiteSpace
+    | CaseInsensitiveString _
+    | CustomLabel _
+    | Char _
+    | String _
+    | DigitChar -> label
+    | Attempt(p) -> Attempt(simplifyAndThensLabel p)
+    | Many(p) -> Many(simplifyAndThensLabel p)
+    | Optional(p) -> Optional(simplifyAndThensLabel p)
+    | Choice(pList) -> List.map simplifyAndThensLabel pList |> Choice
+    | Inside(a, b) -> Inside (simplifyAndThensLabel a, simplifyAndThensLabel b)
+    | OrElse(a, b) -> OrElse (simplifyAndThensLabel a, simplifyAndThensLabel b)
+    | AndThen(a, b) ->
+        match simplifyAndThensLabel a, simplifyAndThensLabel b with
+        | AndThen (a1,b1), AndThen(a2,b2) ->
+            Sequence [
+                a1
+                b1
+                a2
+                b2
+            ]
+        | Sequence b, AndThen(a1,b1) -> Sequence (b @ [a1;b1])
+        | AndThen(a1,b1), Sequence b -> Sequence ([a1;b1] @ b)
+        | Sequence a, Sequence b ->
+            a @ b |> Sequence
+        | Sequence a, somethingElse -> Sequence (a @ [somethingElse])
+        | AndThen(a,b), somethingElse -> Sequence [a;b;somethingElse]
+        | somethingElse, AndThen(a,b) -> Sequence [somethingElse;a;b]
+        | notSequentialA, notSequentialB -> AndThen(notSequentialA, notSequentialB) // base case
+    | Sequence(l) -> Sequence (List.map simplifyAndThensLabel l)
+
+let aP = pstring "a"// <?> (BasicLabel.String "Alpha")
+let bP = pstring "b"// <?> (BasicLabel.String "Beta")
+
+let cP = pstring "c"// <?> (BasicLabel.String "Cetalol")
+
+let ac = aP .>>. cP
+
+
+let abcP = aP .>>. bP .>>. cP
+
+let bcaP = aP .>>. cP .>>. aP
+
+let abOrbcP = (attemptP abcP) <|> (bcaP )
+
+//run abOrbcP "acd" |> printProjectSpecificResult |> printfn "%s"
+//run abOrbcP "ad" |> printProjectSpecificResult |> printfn "%s"

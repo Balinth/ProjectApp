@@ -1,11 +1,19 @@
 module ProjectSpecificLabels
 
+open SQLAST
+open DatabaseSchema
+
 type ProjectSpecificLabel =
+    | SelectStatement
+    | WhereExpression
     | BinaryExpr
     | NumericExpr
     | StringLiteral
+    | DatabaseColumnName
+    | DatabaseTableName
     | ColumnName of string
     | TableName of string
 
 type ProjectSpecificError =
-    | SQLASTError of SQLAST.ErrorMsg<DatabaseSchema.ProjectAppCol,DatabaseSchema.ProjectAppTable> list
+    | SQLASTError of ErrorMsg<ProjectAppCol,ProjectAppTable> list
+    | SelectedColumnsTablesMismatch

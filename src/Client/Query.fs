@@ -12,6 +12,7 @@ open Fable.Core.JsInterop
 open Language
 open CommonView
 open Fable.FontAwesome
+open Fable.React.Props
 
 type Model = {
     NewQueryInput : string
@@ -38,9 +39,9 @@ let update query (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     | false, Query ->
         {currentModel with Loading = true}, Cmd.OfAsync.either query currentModel.NewQueryInput QueryResult UnexpectedError
     | _, QueryResult (Ok newTable)->
-        {currentModel with Table = Some newTable; Loading = false; LastQuery = currentModel.NewQueryInput}, Cmd.none
+        {currentModel with Table = Some newTable; Loading = false; LastQuery = currentModel.NewQueryInput; Errors = []}, Cmd.none
     | _, QueryResult (Error errors) ->
-        {currentModel with Errors = errors}, Cmd.none
+        {currentModel with Errors = errors; Loading = false}, Cmd.none
     | _, UnexpectedError err -> {currentModel with Loading = false}, Cmd.none //errorToast err
 
 
@@ -64,7 +65,6 @@ let tableHeader (dynTable : DynamicTable.DynamicTable<ProjectAppCol>) =
     |> Seq.ofList
 
 let view (model : Model) lStr dispatch =
-
     let button =
         match model.Loading with
         | false ->
@@ -91,12 +91,18 @@ let view (model : Model) lStr dispatch =
             Card.content [] [
                 form [] [
 
-                    textInput (lStr LStr.Username) Text (QueryInputChange >> dispatch)
-                    (
-                      model.Errors
-                      |> List.map LStr.APIError
-                      |> errorMsgs lStr
-                    )
+                    textInput (lStr LStr.Query) Text (QueryInputChange >> dispatch)
+                    pre [ ] [
+                        (
+                            match model.Errors with
+                            | [] when model.LastQuery = "" -> lStr LStr.PleaseEnterAQuery |> str
+                            | [] -> lStr LStr.Succes |> str
+                            | errors ->
+                                  errors
+                                  |> List.map LStr.APIError
+                                  |> errorMsgs lStr
+                        )
+                    ]
                     button
                 ]
             ]
@@ -105,15 +111,23 @@ let view (model : Model) lStr dispatch =
         match model.Table with
         | Some table ->
             let data = tableDataFromDynTable table
-            Box.box' [] [
-                DataTableBuilder [
-                    DataTableProps.Header (Some ["Table View test"])
-                    DataTableProps.Value (data)
-                    ]
-                    (tableHeader table)
+            Card.card [] [
+
+                Card.header [] [
+                    Card.Header.title [] [ lStr LStr.QueryResult |> str ]
+                ]
+
+                Card.content [] [
+                    DataTableBuilder [
+                        DataTableProps.Header (Some [model.LastQuery])
+                        DataTableProps.Value (data)
+                        DataTableProps.ResizableColumns (Some true)
+                        ]
+                        (tableHeader table)
+                ]
             ]
         | None ->
-            div [ ] [str "No table..."]
+            div [ ] [ ]
     div [] [
         queryForm
         table

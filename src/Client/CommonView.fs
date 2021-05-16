@@ -3,6 +3,7 @@ open Fulma
 open Fable.React.Helpers
 open Fable.Core.JsInterop
 open Fable.React.Standard
+open Fable.React.Props
 
 type InputType =
     | Text
@@ -30,7 +31,7 @@ let errorMsgs lstr errors =
     match errors with
     | [] -> div [] []
     | notEmptyErrors ->
-        div [] [
+        div [ [WhiteSpaceOptions.PreWrap |> CSSProp.WhiteSpace] |> Style ] [
             ul [] [
                 for error in notEmptyErrors ->
                     Text.div [ Modifiers [Modifier.TextColor IsDanger] ] [

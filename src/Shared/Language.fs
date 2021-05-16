@@ -11,6 +11,9 @@ type Language =
     | Hungarian
 
 type LStr =
+    | PleaseEnterAQuery
+    | QueryResult
+    | Succes
     | ErrorNotLoggedIn
     | Account
     | Register
@@ -26,6 +29,7 @@ type LStr =
     | InvalidEmail
     | User
     | Query
+    | SQLQuery
     | ValidationError of Validation.ValidationError
     | ClientError of ClientError
     | APIError of APIError
@@ -37,6 +41,10 @@ let foldListNewLines =
 
 let rec englishString mlString =
     match mlString with
+    | SQLQuery -> "SQL query"
+    | PleaseEnterAQuery -> "Please enter a query."
+    | QueryResult -> "Query result"
+    | Succes -> "Succes"
     | ErrorNotLoggedIn -> "Error: not logged in."
     | Account -> "Account"
     | Register -> "Register"
@@ -94,9 +102,12 @@ let rec englishString mlString =
                         |> List.map getColumnName
                         |> List.fold (fun state str -> state + "\n" + str) ""
                     sprintf "All columns must be distinct. Non distinct colums:\n%s" nonDistinctCols
+                | InsertColumnAndDataCountMismatch(columns, data) -> sprintf "Number of insert columns (%i) and datas (%i) must match!" columns.Length data.Length
             | InsertFailed -> "Insert failed."
             | MoreThanOneResult -> "More than one result."
             | MissingData -> "Missing data"
+        | ParserError (label,err,pos) -> Error (label,err,pos) |>  ParserLanguageEng.printProjectSpecificResultEnglish
+        | UnexpectedError(e) -> "Unexpected error: " + e.Message
 
     | LoginError loginError ->
         match loginError with
@@ -128,6 +139,7 @@ let rec englishString mlString =
 
 let rec hungarianString mlString =
     match mlString with
+    | SQLQuery -> "SQL lekérdezés"
     | ErrorNotLoggedIn -> "Hiba: nincs bejelentkezve."
     | Account -> "Felhasználói fiók"
     | Register -> "Regisztráció"
@@ -185,9 +197,12 @@ let rec hungarianString mlString =
                         |> List.map getColumnName
                         |> List.fold (fun state str -> state + "\n" + str) ""
                     sprintf "Minden oszlopnak egyedinek kell lennie. Nem egyedi oszlopok:\n%s" nonDistinctCols
+                | InsertColumnAndDataCountMismatch(columns, data) -> sprintf "A beszúr oszlopok száma (%i) és az adatok száma (%i) megegyzeő kell legyen!" columns.Length data.Length
             | InsertFailed -> "Beszúrás sikertelen."
             | MoreThanOneResult -> "Több mint egy eredmény."
             | MissingData -> "Hiányzó adat"
+        | ParserError (label,err,pos) -> Error (label,err,pos) |>  ParserLanguageHun.printProjectSpecificResultHungarian
+        | UnexpectedError e -> sprintf "Váratlan hiba: %s" e.Message
 
     | LoginError loginError ->
         match loginError with
@@ -215,6 +230,9 @@ let rec hungarianString mlString =
                 |> foldListNewLines
             sprintf "API Hibák:\n%s" errors
         | UnexpectedRegistrationError err -> "Váratlan hiba: " + err
+    | PleaseEnterAQuery -> "Írj be egy lekérést."
+    | QueryResult -> "Lekérés eredménye"
+    | Succes -> "Siker"
 
 let getMLString lang str =
     match lang with

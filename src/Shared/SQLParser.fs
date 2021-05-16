@@ -238,7 +238,7 @@ let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
         |> List.sortByDescending (fst >> db.GetTableNameByColumn)
         |> List.map snd
         |> choice
-
+        <?> (CustomLabel DatabaseTableName)
     //let dbSpecificColumnP =
 
     let columnParsers cases =
@@ -246,7 +246,7 @@ let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
         |> Seq.map (fun columnCase ->
             let colTableP = opt (tablePMap.[columnCase] .>. pchar '.' |> attemptP)
             let colName = db.GetColumnName columnCase
-            colTableP
+            (colTableP<?> (CustomLabel DatabaseTableName))
             >. pstring colName
             .>> spaces
             >>% db.GetColumn columnCase
@@ -263,21 +263,88 @@ let databaseP<'c,'t when 'c : comparison> (db:DatabaseSchema<'c,'t>) =
 
     {ColumnNameP=columnP;TableNameP=tableP;DatabaseSchema=db; TableSpecificColumnNameP=tableSpecificColumnP}
 
+type PreParsedCol =
+    | Prefixed of table:string * col:string
+    | Naked of col:string
+
+type SelectedCols =
+    | All // *
+    | OneOrMoreCols of PreParsedCol list
+
+let identifierP =
+    manyChars1 (satisfy (fun c -> System.Char.IsLetter c || c = '_') NoLabelSpecified)
+    .>>. manyChars (satisfy (fun c -> System.Char.IsLetterOrDigit c || c = '_') NoLabelSpecified)
+    |>> (fun (a,b) -> a + b)
+    <?> (CustomLabel DatabaseColumnName)
+
+let selectColPreP =
+    pchar '*' >>% SelectedCols.All
+    <|> (
+        attemptP (
+            identifierP .> (pchar '.') .>. identifierP .>> spaces
+            |>> (fun (t,c) -> Prefixed(t,c))
+            )
+        <|> (identifierP .>> spaces |>> Naked)
+        |> sepBy1 <| (pchar ',' .>>. spaces)
+        |>> OneOrMoreCols
+    )
+
+let solveConcreteTableColumn (dbParser:DatabaseParser<'c,'t,_,_>) tables column : Column<'c> option =
+    match column with
+    | Prefixed (table, col) ->
+        match run dbParser.TableNameP table with
+        | Ok (table, input) ->
+            match run (dbParser.TableSpecificColumnNameP table) col with
+            | Ok (column, input) -> Some column
+            | Error _ -> None
+        | Error _ -> None
+    | Naked col ->
+        match run dbParser.ColumnNameP col with
+        | Ok (col, input) ->
+            match List.filter (fun t -> t = dbParser.DatabaseSchema.GetColumnTable col.Col) tables with
+            | [exactlyOne] -> Some col
+            | _ -> None
+        | Error _ -> None
+
+
+let solveSelectedColumns (dbParser:DatabaseParser<'c,'t,_,_>) tables selectedColumns : Column<'c> list option =
+    match selectedColumns with
+    | All ->
+        getDatabaseColumns<'c> dbParser.DatabaseSchema.GetColumnType
+        |> List.filter (fun c -> List.contains (dbParser.DatabaseSchema.GetColumnTable c.Col) tables)
+        |> Some
+    | OneOrMoreCols cols ->
+        let cols = List.map (solveConcreteTableColumn dbParser tables) cols
+        match List.choose id cols with
+        | allOk when allOk.Length = cols.Length -> Some allOk
+        | _ -> None
+
 let selectedColumnsP dbParser =
     pchar '*' >>% (getDatabaseColumns<'c> dbParser.DatabaseSchema.GetColumnType |> List.ofSeq)
-    <|> (sepBy (dbParser.ColumnNameP .>> spaces) (pchar ',' .>> spaces) )
+    <|> (sepBy ((dbParser.ColumnNameP) .>> spaces) (pchar ',' .>> spaces) )
 
 let queryP databaseParser =
-    let exprPs = expressionParsers databaseParser.ColumnNameP
+    let exprPs = expressionParsers (databaseParser.ColumnNameP)
     let boolExprP = exprPs.BoolExprP
     pstringInsensitive "SELECT"
-    >. selectedColumnsP databaseParser
+    >. selectColPreP //selectedColumnsP databaseParser
+    <?> (CustomLabel SelectStatement)
     .> pstringInsensitive "FROM"
-    .>. (sepBy (databaseParser.TableNameP .>> spaces) (pchar ',' .>> spaces))
+    .>. (sepBy (databaseParser.TableNameP <?> (CustomLabel DatabaseTableName) .>> spaces) (pchar ',' .>> spaces))
+    >>= ( fun (columns, tables) ->
+        match solveSelectedColumns databaseParser tables columns with
+        | Some columns ->
+            returnP (DatabaseTableName |> CustomLabel) (columns, tables)
+        | None ->
+            failP (SelectedColumnsTablesMismatch |> CustomError)
+            <?> (DatabaseTableName |> CustomLabel)
+    )
     .>. opt (pstringInsensitive "WHERE"
-        >. boolExprP)
-    |>> fun ((columns, tables), condition) ->
+        >. boolExprP <?> (CustomLabel WhereExpression))
+    |>> (fun ((columns, tables), condition) ->
         {Columns = columns; Condition = condition}
+    )
+    .>> spaces .>> endOfInputP
 
 
 // dbSpecificASTError: in this project will be always ProjectSpecificError.SQLASTError
@@ -285,7 +352,7 @@ let queryP databaseParser =
 // the root cause of this inelegance is that the AST error should not need to know about the actual db schema.
 let insertP dbSchema dbSpecificASTError databaseParser =
     let columnListP =
-        sepBy1 databaseParser.ColumnNameP (pchar ',' .>> spaces)
+        sepBy1 (databaseParser.ColumnNameP ) (pchar ',' .>> spaces)
     let valueListP =
         sepBy1 dataLiteralP (pchar ',' .>> spaces)
     pstringInsensitive "insert into"

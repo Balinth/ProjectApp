@@ -177,7 +177,8 @@ let tests =
     exprTestCase "\"a\"<\"b\"" true
     exprTestCase "\"1\"=1 and 1.0 = 1 and 1 = 1.0 and " true
 
-    queryTest "select * from User" {Columns=getDatabaseColumns getColumnType;Condition=None}
+    queryTest "select * from User" {Columns=userColumns;Condition=None}
+    queryTest "select * from User, Project" {Columns=projectColumns @ userColumns;Condition=None}
     queryTest "select UserName, UserID from User" {Columns=[UserName|> UserCol |> getColumn; UserID |> UserCol |> getColumn];Condition=None}
     queryTest "select UserName, UserID from User where true" {Columns=[UserName|> UserCol |> getColumn; UserID |> UserCol |> getColumn];Condition=true|>BoolLiteral|>Some }
     queryTest
