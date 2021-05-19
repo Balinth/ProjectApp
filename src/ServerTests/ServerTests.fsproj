@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="WhiteSpacePermutations.fs" />
+    <Compile Include="..\..\\docs\Thesis_example_code_fs.fs" />
     <Compile Include="TestingUtils.fs" />
     <Compile Include="QueryTests.fs" />
     <Compile Include="InsertTests.fs" />
