@@ -16,7 +16,7 @@ open ProjectSpecificLabels
 let tests =
     let projectAppDBP = databaseP DatabaseSchema.projectAppDBSchema
     let projectAppInsertP =
-      insertP DatabaseSchema.projectAppDBSchema ProjectSpecificError.SQLASTError projectAppDBP
+      insertP ProjectSpecificError.SQLASTError projectAppDBP
 
     let createInsertValue table columns =
         DatabaseAccess.createInsert table columns

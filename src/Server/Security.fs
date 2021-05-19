@@ -7,11 +7,10 @@ open Newtonsoft.Json
 open System.Security.Cryptography
 open Shared
 
-
-//  This module uses the JOSE-JWT library https://github.com/dvsekhvalnov/jose-jwt
-
 type UserAuthInfo = {
     UserName: string
+    Role: UserRole
+    QueryLimit: string
 }
 
 let createRandomKey() =
@@ -34,10 +33,12 @@ let private decodeString (jwt : string) =
 let encodeJwt token = JsonConvert.SerializeObject token |> encodeString
 
 /// Decodes a JSON web token to an object.
-let decodeJwt<'a> (jwt : string) : 'a = decodeString jwt |> JsonConvert.DeserializeObject<'a>
+let decodeJwt<'a> (jwt : Token) : 'a =
+    let (Token (str)) = jwt
+    decodeString str |> JsonConvert.DeserializeObject<'a>
 
 /// Returns some userinfo if the JSON Web Token is successfully decoded and the signature is verified.
-let validateJwt (jwt : string) : UserAuthInfo option =
+let validateJwt (jwt : Token) : UserAuthInfo option =
     try
         let token = decodeJwt jwt
         Some token
@@ -76,7 +77,7 @@ let authorizeAsync  (f : 'u -> UserAuthInfo -> Async<'t>) : SecureRequest<'u> ->
                 return Result.Ok output
                 }
 
-let authorizeAny (f : UserAuthInfo -> 't) : string -> SecureResponse<'t> =
+let authorizeAny (f : UserAuthInfo -> 't) : Token -> SecureResponse<'t> =
     fun token ->
         match validateJwt token with
         | None -> async { return Result.Error [AuthError TokenInvalid] }
@@ -86,7 +87,7 @@ let authorizeAny (f : UserAuthInfo -> 't) : string -> SecureResponse<'t> =
                 return Result.Ok output
             }
 
-let authorizeAnyAsync (f : UserAuthInfo -> Async<'t>) : string -> SecureResponse<'t> =
+let authorizeAnyAsync (f : UserAuthInfo -> Async<'t>) : Token -> SecureResponse<'t> =
     fun token ->
         match validateJwt token with
         | None -> async { return Result.Error [AuthError TokenInvalid] }

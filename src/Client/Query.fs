@@ -20,21 +20,30 @@ type Model = {
     Errors : APIError list
     Table : DynamicTable<ProjectAppCol> option
     Loading : bool
+    SavedQueryName : string option
+    ForceInputValue : bool
 }
 
-let init = {NewQueryInput = ""; LastQuery = ""; Errors = []; Table = None; Loading = false}
+let init = {NewQueryInput = ""; LastQuery = ""; Errors = []; Table = None; Loading = false; SavedQueryName = None; ForceInputValue = false}
 
 type Msg =
     | QueryInputChange of string
+    | ForcedQueryInputChange of string
     | Query
     | QueryResult of QueryResult
     | UnexpectedError of exn
+    | QueryNameInputChange of string
+    | SaveQueryStart
+    | SaveQueryOk
+    | SaveQueryCancel
 
-let update query (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
+let update query saveQuery (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     let doNothing = currentModel, Cmd.none
+    let currentModel = {currentModel with ForceInputValue = false}
     match currentModel.Loading, msg with
     | true, QueryInputChange _ -> doNothing
     | false, QueryInputChange newInput -> {currentModel with NewQueryInput = newInput}, Cmd.none
+    | _, ForcedQueryInputChange newInput -> {currentModel with NewQueryInput = newInput; ForceInputValue = true}, Cmd.none
     | true, Query -> doNothing
     | false, Query ->
         {currentModel with Loading = true}, Cmd.OfAsync.either query currentModel.NewQueryInput QueryResult UnexpectedError
@@ -43,6 +52,19 @@ let update query (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
     | _, QueryResult (Error errors) ->
         {currentModel with Errors = errors; Loading = false}, Cmd.none
     | _, UnexpectedError err -> {currentModel with Loading = false}, Cmd.none //errorToast err
+    | _, SaveQueryStart -> {currentModel with SavedQueryName = Some ""}, Cmd.none
+    | _, SaveQueryOk ->
+        match currentModel.SavedQueryName with
+        | Some name ->
+            Cmd.OfAsync.start (saveQuery {Query = currentModel.NewQueryInput; Name = name; SavedBy = None})
+            {currentModel with SavedQueryName = None}, Cmd.none
+        | None -> doNothing
+    | _, QueryNameInputChange newName ->
+        match currentModel.SavedQueryName with
+        | Some _ ->
+            {currentModel with SavedQueryName = Some newName}, Cmd.none
+        | None -> doNothing
+    | _, SaveQueryCancel -> {currentModel with SavedQueryName = None}, Cmd.none
 
 
 let tableDataFromDynTable (dynTable : DynamicTable.DynamicTable<ProjectAppCol>) =
@@ -65,6 +87,7 @@ let tableHeader (dynTable : DynamicTable.DynamicTable<ProjectAppCol>) =
     |> Seq.ofList
 
 let view (model : Model) lStr dispatch =
+    let inputValue = (if model.ForceInputValue then Some model.NewQueryInput else None)
     let button =
         match model.Loading with
         | false ->
@@ -82,6 +105,35 @@ let view (model : Model) lStr dispatch =
                 Button.IsLoading true
                 ]
                 [lStr LStr.Query |> str]
+    let saveStartButton =
+        match model.SavedQueryName with
+        | None ->
+            Button.button [
+                    Button.OnClick (fun e ->
+                        e.preventDefault()
+                        dispatch SaveQueryStart)
+            ] [lStr LStr.Save |> str ]
+        | Some _ -> div [] []
+    let saveQueryForm =
+        match model.SavedQueryName with
+        | None -> div [] []
+        | Some queryName ->
+            form [] [
+                textInput (lStr LStr.QueryName) Text None (QueryNameInputChange >> dispatch)
+                Button.button [
+                    Button.OnClick (fun e ->
+                        e.preventDefault()
+                        dispatch SaveQueryOk)
+                    Button.Disabled (queryName = "")
+                ] [lStr LStr.Save |> str ]
+                Button.button [
+                    Button.OnClick (fun e ->
+                        e.preventDefault()
+                        dispatch SaveQueryCancel)
+                    Button.IsInverted
+                ] [lStr LStr.Cancel |> str ]
+            ]
+
     let queryForm =
         Card.card [] [
             Card.header [] [
@@ -91,7 +143,7 @@ let view (model : Model) lStr dispatch =
             Card.content [] [
                 form [] [
 
-                    textInput (lStr LStr.Query) Text (QueryInputChange >> dispatch)
+                    textInput (lStr LStr.Query) Text inputValue (QueryInputChange >> dispatch)
                     pre [ ] [
                         (
                             match model.Errors with
@@ -104,7 +156,9 @@ let view (model : Model) lStr dispatch =
                         )
                     ]
                     button
+                    saveStartButton
                 ]
+                saveQueryForm
             ]
         ]
     let table =

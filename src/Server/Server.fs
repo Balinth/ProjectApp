@@ -21,8 +21,16 @@ open Shared
 open DatabaseAccess
 open ResultExtensions
 open DynamicDBAccess
+open CRUD
 
 let liftAsync x = async { return x }
+
+let mapAsync f o =
+    async {
+        let! x = o
+        let value = f x
+        return value
+    }
 
 let tryGetEnv = System.Environment.GetEnvironmentVariable >> function null | "" -> None | x -> Some x
 let tryGetConfigOr<'a when 'a : null> (config: IConfiguration) key orDo =
@@ -41,6 +49,11 @@ let api : ISecureAPI = {
     login = login >> liftAsync
     getUserDetails = (Security.authorize userInfoFromAuthInfo)
     query = Security.authorize query
+    insert = Security.authorize insert >> (mapAsync Result.collapse)
+    saveQuery = Security.authorize saveQuery >> (mapAsync Result.collapse)
+    modifyUser = Security.authorize modifyUser
+    listSavedQueries = Security.authorize listSavedQueries >> (mapAsync Result.collapse)
+    deleteQuery = Security.authorize deleteQuery >> (mapAsync Result.collapse)
 }
 
 let securedApp =

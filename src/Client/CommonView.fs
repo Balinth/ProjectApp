@@ -10,7 +10,7 @@ type InputType =
     | Password
     | Email
 
-let textInput inputLabel inputType (onChange : string -> unit) =
+let textInput inputLabel inputType forcedInput (onChange : string -> unit) =
     let inputType =
         match inputType with
         | Text -> Input.text
@@ -19,10 +19,14 @@ let textInput inputLabel inputType (onChange : string -> unit) =
     Field.div [] [
         Label.label [] [ str inputLabel ]
         Control.div [] [
-            inputType [
+            inputType (
+                [
                 Input.Placeholder inputLabel
                 Input.OnChange (fun e -> onChange !!e.target?value)
-            ]
+            ] @ match forcedInput with
+                | None -> []
+                | Some input -> [Input.Value input]
+            )
         ]
     ]
 

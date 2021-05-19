@@ -15,12 +15,20 @@ type LoginInfo = {
 
 type Token = Token of string
 
+//  This module uses the JOSE-JWT library https://github.com/dvsekhvalnov/jose-jwt
+type UserRole =
+    | Admin
+    | User
+    | Nothing
+
 type UserInfo = {
     UserName : string
     UserNameID : string
     GivenName : string
     FamilyName : string
     PrimaryEmail : string
+    UserRole : UserRole
+    QueryLimit : string
 }
 
 type RegisterInfo = {
@@ -74,8 +82,14 @@ type UserInfoResult = Result<UserInfo,APIError list>
 
 type QueryResult = Result<DynamicTable<ProjectAppCol>,APIError list>
 
+type QueryInfo = {
+    Name: string
+    Query: string
+    SavedBy: string option
+}
+
 type SecureRequest<'t> = {
-    Token : string
+    Token : Token
     Body : 't
 }
 
@@ -93,5 +107,11 @@ type ISecureAPI = {
     login : LoginInfo -> Async<LoginResult>
     getUserDetails : SecureRequest<unit> -> SecureResponse<UserInfoResult>
     query : SecureRequest<string> -> SecureResponse<QueryResult>
+    saveQuery : SecureRequest<QueryInfo> -> SecureResponse<string>
+    deleteQuery : SecureRequest<QueryInfo> -> SecureResponse<string>
+    listSavedQueries : SecureRequest<unit> -> SecureResponse<QueryInfo list>
+    modifyUser : SecureRequest<UserInfo> -> SecureResponse<UserInfo>
+    insert : SecureRequest<string> -> SecureResponse<unit>
+    //AddProject : SecureRequest<string> -> SecureResponse<
 }
 

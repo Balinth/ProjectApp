@@ -109,7 +109,7 @@ let view (model:Model) lstr dispatch =
     let givenname = lstr LStr.GivenName
     let familyname = lstr LStr.FamilyName
     let email = lstr LStr.Email
-
+    let textInput a b c = textInput a b  None c
     let button =
         match model.RegisterState with
         | LastTryFailed _ ->

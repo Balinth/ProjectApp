@@ -32,7 +32,6 @@ let connectionString =
         ForeignKeys = true
         ).ToString()
 
-
 let getColumns conn (tableName : string) =
     let sqlString = @"SELECT * FROM pragma_table_info(@table_name)"
     let parameters = DynamicParameters()
@@ -111,7 +110,23 @@ type DbUser ={
     PrimaryEmail : string
     GivenName : string
     FamilyName : string
+    UserRole : string
+    QueryLimit : string
 }
+
+module UserRole =
+    let private admin = "Admin"
+    let private user = "User"
+    let persist role =
+        match role with
+        | Admin -> admin
+        | User -> user
+        | Nothing -> "Nothing"
+    let read roleString =
+        match roleString with
+        | a when a = admin -> Admin
+        | u when u = user -> User
+        | _ -> Nothing
 
 let dbUserToUserInfo dbUser : UserInfo =
     {
@@ -120,11 +135,15 @@ let dbUserToUserInfo dbUser : UserInfo =
         GivenName = dbUser.GivenName
         FamilyName = dbUser.FamilyName
         PrimaryEmail = dbUser.PrimaryEmail
+        UserRole = UserRole.read dbUser.UserRole
+        QueryLimit = dbUser.QueryLimit
     }
 
 [<CLIMutable>]
 type DbLocalAuth ={
     UserID : string
+    UserRole : string
+    QueryLimit : string
     PasswordHash : string
     Salt : string
 }
@@ -203,143 +222,3 @@ let ensureInsert expectedCount insertResult =
     match insertResult with
     | correct when correct = expectedCount -> Ok insertResult
     | _ -> Error [InsertFailed]
-
-let queryLocalAuth userName =
-    let getLocalAuthQuery = {
-        Columns = [
-            UserCol UserID
-            LocalAuthenticationCol Salt
-            LocalAuthenticationCol PasswordHash
-        ] |> List.map getColumn
-        Condition =
-            Some (
-                BinaryBoolExpr (
-                    RelationExpr (
-                        UserCol UserName |> getColumn |> Column,
-                        Equals,
-                        userName |> String |> Value
-                    ),
-                    And,
-                    RelationExpr (
-                        UserCol UserID |> getColumn |> Column,
-                        Equals,
-                        LocalAuthenticationCol User_ID |> getColumn |> Column
-                    )
-                )
-            )
-        }
-    let sqlStr = stringizeSQLQuery projectAppDBSchema getLocalAuthQuery
-    sqlStr
-    |> Result.mapError (fun eList -> List.map SQLError eList)
-    >>= executeQueryTyped<DbLocalAuth>
-
-let queryUserNameTaken userName =
-    {
-        Columns = [UserCol UserName |> getColumn]
-        Condition = Some
-            (
-            RelationExpr(
-                UserCol UserName |> getColumn |> Column,
-                Equals,
-                userName |> String |> Value
-            )
-        )
-    }
-    |> stringizeSQLQuery projectAppDBSchema
-    |> Result.mapError (fun eList -> List.map SQLError eList)
-    >>= executeQuery
-    |>> (fun objs -> objs.Count() = 1)
-
-let createInsert table columnsAndData =
-    let columns = List.map fst columnsAndData
-    let data = List.map snd columnsAndData
-    InsertStatement.create projectAppDBSchema table columns data
-
-let register (registerInfo:RegisterInfo) : RegistrationResult =
-    System.Environment.GetEnvironmentVariables().Keys
-    |> Seq.cast
-    |> Seq.iter (fun o -> printfn "%A" o)
-    match Validation.validateUsername registerInfo.UserName, Validation.validatePassword registerInfo.Password with
-    | Ok userName, Ok password ->
-        let insertUserValues = [
-            UserCol UserName , userName |> String
-            UserCol GivenName, registerInfo.GivenName |> String
-            UserCol FamilyName, registerInfo.FamilyName |> String
-            UserCol PrimaryEmail, registerInfo.UserEmail |> String
-            UserCol UserNameID, Guid.NewGuid().ToString() |> String
-        ]
-        let insertUserResult =
-            createInsert UserTable insertUserValues
-            >>= stringizeSQLInsert projectAppDBSchema
-            |> Result.mapError (fun eList -> List.map SQLError eList)
-            >>= executeInsert projectAppDBSchema
-
-        match insertUserResult with
-        | Error someErr ->
-            // check if the problem is a taken userName
-            match queryUserNameTaken registerInfo.UserName with
-            | Ok result when result = true -> UserNameTaken |> Error
-            | Ok _ -> [ InsertFailed |> DBError ] |> APIError |> Error
-            | Error moreErrors -> (moreErrors @ someErr) |> List.map DBError |> APIError |> Error
-        | Ok _ ->
-            let salt = createRandomKey()
-            let password = utf8Bytes registerInfo.Password
-            let saltedPassword = Array.concat [salt; password]
-            let passwordHash = sha256Hash saltedPassword
-
-
-            result {
-            let! dbUser = getUserByName registerInfo.UserName |> alwaysOneQuery
-            let! insertStatement =
-                createInsert LocalAuthenticationTable [
-                    LocalAuthenticationCol User_ID, dbUser.UserID |> Int
-                    LocalAuthenticationCol PasswordHash, base64 passwordHash |> String
-                    LocalAuthenticationCol Salt, base64 salt |> String
-                ]
-                |> Result.mapError (fun eList -> List.map SQLError eList)
-            let! sqlString = stringizeSQLInsert projectAppDBSchema insertStatement
-            let! insertResult =
-                executeInsert projectAppDBSchema sqlString
-                >>= (ensureInsert 1)
-            return! userName |> Shared.UserName |> Ok
-            }
-            |> Result.mapError (List.map DBError >> APIError)
-    | Error userNameProblems, Error passwordProblems -> ValidationError (passwordProblems,userNameProblems) |> Error
-    | Error userNameProblems, _ -> ValidationError ([],userNameProblems) |> Error
-    | _, Error passwordProblems -> ValidationError (passwordProblems,[]) |> Error
-
-
-let login (loginInfo:LoginInfo) =
-    match queryLocalAuth loginInfo.UserName |> oneOrNoneQuery with
-    | Ok (Some dbAuth) ->
-        if Security.verifyPassword loginInfo.Password dbAuth.Salt dbAuth.PasswordHash
-        then
-            let userName : UserAuthInfo = {UserName = loginInfo.UserName}
-            let token = encodeJwt userName
-            let userDetails =
-                getUserByName loginInfo.UserName
-                |> alwaysOneQuery
-                |>> dbUserToUserInfo
-                |> mapDBErrorToAPIError
-            match userDetails with
-            | Ok userDetails ->
-                (Token token, userDetails) |> Ok
-            | Error errors -> Error (UnexpectedLoginError (sprintf "%A" errors))
-        else
-            Error PasswordIncorrect
-    | Ok None -> Error UsernameDoesNotExist
-    | Error error -> UnexpectedLoginError (sprintf "%A" error) |> Error
-
-let insertUser (user:UserInfo) =
-    let insertValues = [
-        UserCol UserName , user.UserName |> String
-        UserCol UserNameID, user.UserNameID |> String
-        UserCol PrimaryEmail, user.PrimaryEmail |> String
-        UserCol GivenName, user.GivenName |> String
-        UserCol FamilyName, user.FamilyName |> String
-    ]
-    //let insertStatement =
-    createInsert UserTable insertValues
-    >>= stringizeSQLInsert projectAppDBSchema
-    |> Result.mapError (fun eList -> List.map SQLError eList)
-    >>= executeInsert projectAppDBSchema

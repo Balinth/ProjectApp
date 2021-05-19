@@ -14,6 +14,7 @@ type ProjectAppTable =
     | OrganizationMemberTable
     | DesignerTable
     | DrafterTable
+    | SavedQueryTable
 
 type ProjectCol =
     | ProjectName
@@ -36,6 +37,8 @@ type UserCol =
     | FamilyName
     | PrimaryEmail
     | UserNameID
+    | UserRole
+    | QueryLimit
 
 type OrganizationCol =
     | OrganizationID
@@ -69,6 +72,11 @@ type LocalAuthenticationCol =
     | Salt
     | User_ID
 
+type SavedQueryCol =
+    | QueryName
+    | Query
+    | SavedBy
+
 type ProjectAppCol =
     | ProjectTableCol of ProjectCol
     | PhaseCol of PhaseCol
@@ -79,6 +87,7 @@ type ProjectAppCol =
     | OrganizationMemberCol of OrganizationMemberCol
     | DrafterCol of DrafterCol
     | DesignerCol of DesignerCol
+    | SavedQueryCol of SavedQueryCol
 
 let getColumnTable col =
     match col with
@@ -91,6 +100,7 @@ let getColumnTable col =
     | OrganizationMemberCol(_) -> OrganizationMemberTable
     | DrafterCol(_) -> DrafterTable
     | DesignerCol(_) -> DesignerTable
+    | SavedQueryCol(_) -> SavedQueryTable
 
 let getTableName table : string =
     match table with
@@ -103,6 +113,7 @@ let getTableName table : string =
     | OrganizationMemberTable -> "OrganizationMember"
     | DesignerTable -> "Designer"
     | DrafterTable -> "Drafter"
+    | SavedQueryTable -> "SavedQuery"
 
 let getColumnName (col : ProjectAppCol) : string =
     match col with
@@ -114,6 +125,8 @@ let getColumnName (col : ProjectAppCol) : string =
         | UserID -> "UserID"
         | GivenName -> "GivenName"
         | FamilyName -> "FamilyName"
+        | UserRole -> "UserRole"
+        | QueryLimit -> "QueryLimit"
     | ProjectTableCol p ->
         match p with
         | ProjectName -> "ProjectName"
@@ -160,6 +173,11 @@ let getColumnName (col : ProjectAppCol) : string =
         | DesignerCol.Phase_ID -> "Phase_ID"
         | DesignerCol.Phase_ProjectID -> "Phase_ProjectID"
         | DesignerCol.Phase_Revision -> "Phase_Revision"
+    | SavedQueryCol savedQueryCol ->
+        match savedQueryCol with
+        | QueryName -> "QueryName"
+        | Query -> "Query"
+        | SavedBy -> "SavedBy"
 
 let getColumnType col =
     match col with
@@ -171,6 +189,8 @@ let getColumnType col =
         | UserID -> DBInt
         | GivenName -> DBString
         | FamilyName -> DBString
+        | UserRole -> DBString
+        | QueryLimit -> DBString
     | ProjectTableCol projectCol ->
         match projectCol with
         | ProjectName -> DBString
@@ -217,6 +237,11 @@ let getColumnType col =
         | DesignerCol.Phase_ID -> DBInt
         | DesignerCol.Phase_ProjectID -> DBInt
         | DesignerCol.Phase_Revision -> DBString
+    | SavedQueryCol savedQueryCol ->
+        match savedQueryCol with
+        | QueryName -> DBString
+        | Query -> DBString
+        | SavedBy -> DBString
 
 let getColumn col = {Col=col;Type=getColumnType col}
 

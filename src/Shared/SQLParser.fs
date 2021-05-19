@@ -350,7 +350,8 @@ let queryP databaseParser =
 // dbSpecificASTError: in this project will be always ProjectSpecificError.SQLASTError
 // note: this is not specifically "bad" design, but is not elegant either
 // the root cause of this inelegance is that the AST error should not need to know about the actual db schema.
-let insertP dbSchema dbSpecificASTError databaseParser =
+let insertP dbSpecificASTError databaseParser =
+    let dbSchema = databaseParser.DatabaseSchema
     let columnListP =
         sepBy1 (databaseParser.ColumnNameP ) (pchar ',' .>> spaces)
     let valueListP =

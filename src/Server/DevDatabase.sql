@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS Project(
 );
 CREATE TABLE IF NOT EXISTS Phase(
     PhaseID INTEGER NOT NULL,
-    PhaseName TEXT NOT NULL UNIQUE,
-    Revision TEXT NOT NULL UNIQUE,
+    PhaseName TEXT NOT NULL,
+    Revision TEXT NOT NULL,
     Project_ID INTEGER NOT NULL,
     ForFabrication_ID INTEGER NOT NULL,
     Mass REAL NOT NULL,
@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS User(
     GivenName TEXT NOT NULL,
     FamilyName TEXT NOT NULL,
     PrimaryEmail TEXT NOT NULL UNIQUE,
-    UserNameID TEXT NOT NULL UNIQUE
+    UserNameID TEXT NOT NULL UNIQUE,
+    UserRole TEXT NOT NULL,
+    QueryLimit TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS Organization(
@@ -59,12 +61,8 @@ CREATE TABLE IF NOT EXISTS Designer(
     Phase_Revision TEXT NOT NULL,
     FOREIGN KEY (User_ID)
         REFERENCES User (UserID),
-    FOREIGN KEY (Phase_ID)
-        REFERENCES Phaes (PhaseID),
-    FOREIGN KEY (Phase_ProjectID)
-        REFERENCES Phase (Project_ID),
-    FOREIGN KEY (Phase_Revision)
-        REFERENCES Phase (Revision),
+    FOREIGN KEY (Phase_ID, Phase_ProjectID, Phase_Revision)
+        REFERENCES Phase (PhaseID, Project_ID, Revision),
     PRIMARY KEY (User_ID, Phase_ID, Phase_ProjectID, Phase_Revision)
 );
 
@@ -75,12 +73,8 @@ CREATE TABLE IF NOT EXISTS Drafter(
     Phase_Revision TEXT NOT NULL,
     FOREIGN KEY (User_ID)
         REFERENCES User (UserID),
-    FOREIGN KEY (Phase_ID)
-        REFERENCES Phaes (PhaseID),
-    FOREIGN KEY (Phase_ProjectID)
-        REFERENCES Phase (Project_ID),
-    FOREIGN KEY (Phase_Revision)
-        REFERENCES Phase (Revision),
+    FOREIGN KEY (Phase_ID, Phase_ProjectID, Phase_Revision)
+        REFERENCES Phase (PhaseID, Project_ID, Revision),
     PRIMARY KEY (User_ID, Phase_ID, Phase_ProjectID, Phase_Revision)
 );
 
@@ -92,3 +86,12 @@ CREATE TABLE IF NOT EXISTS LocalAuthentication(
     FOREIGN KEY (User_ID)
         REFERENCES User (UserID)
 );
+
+CREATE TABLE IF NOT EXISTS SavedQuery(
+    QueryName TEXT NOT NULL,
+    Query TEXT NOT NULL,
+    SavedBy TEXT NOT NULL,
+    PRIMARY KEY(QueryName, Query, SavedBy),
+    FOREIGN KEY (SavedBy)
+        REFERENCES User (UserName)
+)

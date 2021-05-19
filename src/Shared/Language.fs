@@ -11,6 +11,15 @@ type Language =
     | Hungarian
 
 type LStr =
+    | ForFabrication
+    | Phase
+    | Project
+    | Organization
+    | Insert
+    | ListSavedQueries
+    | Save
+    | Cancel
+    | QueryName
     | PleaseEnterAQuery
     | QueryResult
     | Succes
@@ -41,6 +50,15 @@ let foldListNewLines =
 
 let rec englishString mlString =
     match mlString with
+    | ForFabrication -> "ForFabrication"
+    | Phase -> "Phase"
+    | Project -> "Project"
+    | Organization -> "Organization"
+    | Insert -> "Insert"
+    | ListSavedQueries -> "List Saved Queries"
+    | Save -> "Save"
+    | Cancel -> "Cancel"
+    | QueryName -> "Query name"
     | SQLQuery -> "SQL query"
     | PleaseEnterAQuery -> "Please enter a query."
     | QueryResult -> "Query result"
@@ -139,6 +157,15 @@ let rec englishString mlString =
 
 let rec hungarianString mlString =
     match mlString with
+    | ForFabrication -> "Gyártásbaadás"
+    | Phase -> "Fázis"
+    | Project -> "Projekt"
+    | Organization -> "Organizáció"
+    | Insert -> "Beszúrás"
+    | ListSavedQueries -> "Mentett lekérések listája"
+    | Save -> "Mentés"
+    | Cancel -> "Mégse"
+    | QueryName -> "Lekérés neve"
     | SQLQuery -> "SQL lekérdezés"
     | ErrorNotLoggedIn -> "Hiba: nincs bejelentkezve."
     | Account -> "Felhasználói fiók"

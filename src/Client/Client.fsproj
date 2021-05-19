@@ -28,6 +28,8 @@
     <Compile Include="UserDetails.fs" />
     <Compile Include="Register.fs" />
     <Compile Include="Query.fs" />
+    <Compile Include="Insert.fs" />
+    <Compile Include="SavedQueries.fs" />
     <Compile Include="Client.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

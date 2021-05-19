@@ -77,3 +77,9 @@ module Result =
         match result with
         | Ok _ -> defaultValue
         | Error error -> error
+
+    let collapse result =
+        match result with
+        | Ok(Ok result) -> Ok(result)
+        | Ok(Error errors) -> Error errors
+        | Error(errors) -> Error errors

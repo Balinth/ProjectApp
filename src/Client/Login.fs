@@ -94,7 +94,7 @@ let view (loginModel:Model) lstr dispatch =
 
     form [] [
         Label.label [] [lstr LStr.Login |> str]
-        textInput (lstr LStr.Username) Text (UserNameInputChange >> dispatch)
+        textInput (lstr LStr.Username) Text None (UserNameInputChange >> dispatch)
         (
           match loginModel.LoginState with
           | Problems (usernameProblems, _) ->
@@ -102,7 +102,7 @@ let view (loginModel:Model) lstr dispatch =
           | _ -> []
           |> errorMsgs lstr
         )
-        textInput (lstr LStr.Password) Password (PasswordInputChange >> dispatch)
+        textInput (lstr LStr.Password) Password None (PasswordInputChange >> dispatch)
         (
           match loginModel.LoginState with
           | Problems (_, passwordProblems) ->

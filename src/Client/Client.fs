@@ -35,17 +35,23 @@ type SubPageModel =
     | LoginPage of Login.Model
     | RegisterPage of Register.Model
     | QueryPage of Query.Model
+    | InsertPage of Insert.Model
+    | SavedQueriesPage of SavedQueries.Model
 
 type ChangePage =
     | ToUserPage
     | ToLoginPage
     | ToRegisterPage
     | ToQueryPage
+    | ToInsertPage
+    | ToSavedQueriesPage
 
 type SubPageMsg =
     | LoginPageMsg of Login.Msg
     | RegisterPageMsg of Register.Msg
     | QueryPageMsg of Query.Msg
+    | InsertPageMsg of Insert.Msg
+    | SavedQueriesPageMsg of SavedQueries.Msg
 
 type Model = {
     Language : Language//.LStr -> string
@@ -82,6 +88,7 @@ let loginAPI = Server.api.login
 let registerAPI = Server.api.register
 let getUser = Server.api.getUserDetails
 let queryAPI = Server.api.query
+let saveQueryAPI = Server.api.saveQuery
 //let getTable = Server.api.getTable
 
 let secureRequestNaked fn token input =
@@ -89,7 +96,6 @@ let secureRequestNaked fn token input =
 
 // Collapses the error cases from the secure request and the API itself into a unified error case
 let secureRequest fn token input =
-    let (Token(token)) = token
     async {
         let! result = secureRequestNaked fn token input
         return
@@ -98,10 +104,20 @@ let secureRequest fn token input =
             | Ok (Error apiErr) -> Error apiErr
             | Error authErr -> Error authErr
     }
-    //match  with
-    //| Ok (Ok result) -> Ok result
-    //| Ok (Error err) -> Error err
-    //| Error err -> Error err
+
+let secureRequestSimpleIgnore fn token input =
+    async {
+        let! result = secureRequestNaked fn token input
+        return ignore result
+    }
+
+let secureRequestSimple fn token input =
+    async {
+        let! result = secureRequestNaked fn token input
+        return result
+    }
+
+
 
 // defines the initial state and initial command (= side-effect) of the application
 let init () : Model * Cmd<Msg> =
@@ -143,6 +159,12 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
         | ToUserPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToQueryPage, Some _ -> {currentModel with SubPage=QueryPage Query.init}, Cmd.none
         | ToQueryPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
+        | ToInsertPage, Some _ -> {currentModel with SubPage=InsertPage Insert.init}, Cmd.none
+        | ToInsertPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
+        | ToSavedQueriesPage, Some _ ->
+            {currentModel with SubPage=SavedQueriesPage SavedQueries.init},
+            Cmd.ofMsg (SavedQueries.GetSavedQueryList |> SavedQueriesPageMsg |> SubPageMsg)
+        | ToSavedQueriesPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToLoginPage, None -> {currentModel with SubPage=LoginPage Login.init}, Cmd.none
         | ToLoginPage, Some _ -> {currentModel with SubPage=LoginPage Login.init}, Cmd.ofMsg Logout
         | ToRegisterPage, None -> {currentModel with SubPage=RegisterPage Register.init}, Cmd.none
@@ -162,18 +184,32 @@ let update (msg : Msg) (currentModel : Model) : Model * Cmd<Msg> =
                 | QueryPageMsg _, QueryPage currentModel, None -> QueryPage currentModel, Cmd.ofMsg (ChangePage ToLoginPage)
                 | QueryPageMsg queryMsg, QueryPage queryPage, Some user ->
                     let query = secureRequest queryAPI user.Token
-                    let model, cmd = Query.update query queryMsg queryPage
+                    let saveQuery = secureRequestSimpleIgnore saveQueryAPI user.Token
+                    let model, cmd = Query.update query saveQuery queryMsg queryPage
                     // for testing only
                     //let err = sprintf "TableMsg: %A" msg
                     //Fable.Core.JS.console.error err
                     QueryPage model, cmd |> Cmd.map (QueryPageMsg >> SubPageMsg)
                     //QueryPage queryPage, Cmd.ofMsg (ChangePage ToLoginPage)
                 | QueryPageMsg _, someOtherSubpage, _ -> someOtherSubpage, Cmd.none
+                | InsertPageMsg insertMsg, InsertPage insertPage, Some user ->
+                    let insert = secureRequestSimpleIgnore Server.api.insert user.Token
+                    let model, cmd = Insert.update insert insertMsg insertPage
+                    InsertPage model, cmd |> Cmd.map (InsertPageMsg >> SubPageMsg)
+                | InsertPageMsg _, someOtherSubpage, _ -> someOtherSubpage, Cmd.none
+                | SavedQueriesPageMsg (SavedQueries.ShowQuery(query)), SavedQueriesPage savedQueriesPage, Some user ->
+                    SavedQueriesPage savedQueriesPage, Cmd.batch [Cmd.ofMsg(ChangePage ToQueryPage); Cmd.ofMsg(Query.ForcedQueryInputChange query.Query |> QueryPageMsg |> SubPageMsg)]
+                | SavedQueriesPageMsg savedQueryMsg, SavedQueriesPage savedQueriesPage, Some user ->
+                    let listSavedQueries = secureRequestSimple Server.api.listSavedQueries user.Token
+                    let deleteQuery = secureRequestSimpleIgnore Server.api.deleteQuery user.Token
+                    let model, cmd = SavedQueries.update listSavedQueries deleteQuery savedQueryMsg savedQueriesPage
+                    SavedQueriesPage model, cmd |> Cmd.map (SavedQueriesPageMsg >> SubPageMsg)
+                | SavedQueriesPageMsg _, someOtherSubpage, _ -> someOtherSubpage, Cmd.none
             {currentModel with SubPage = newSubpageModel},cmds
     //| APIErrors(_) -> failwith "Not Implemented"
     | LoginSuccess (token, user) ->
         {currentModel with User = Some {User = user; Token = token }},
-        Cmd.ofMsg (ChangePage ToUserPage)
+        Cmd.ofMsg (ChangePage ToQueryPage)
     | LoginFailed loginError ->
             currentModel, errorToast (LoginError loginError)
     | UnexpectedError err -> currentModel, errorToastTmp err
@@ -246,6 +282,8 @@ let navBrand currentLang (user:UserInfo option) dispatch =
                             | Some user -> [
                                     navbarItem user.UserName (ChangePage ToUserPage)
                                     navbarItem (lStr LStr.Query) (ChangePage ToQueryPage)
+                                    navbarItem (lStr LStr.Insert) (ChangePage ToInsertPage)
+                                    navbarItem (lStr LStr.ListSavedQueries) (ChangePage ToSavedQueriesPage)
                                     navbarItem (lStr LStr.Logout) (Logout)
                                 ]
                             | None -> [
@@ -318,13 +356,13 @@ let breadcrump =
           Breadcrumb.item [ Breadcrumb.Item.IsActive true ]
               [ a [ ] [ str "Admin" ] ] ]
 
-let hero =
+let hero (user:UserInfo) =
     Hero.hero [ Hero.Color IsInfo
                 Hero.CustomClass "welcome" ]
         [ Hero.body [ ]
             [ Container.container [ ]
                 [ Heading.h1 [ ]
-                      [ str "Hello, Admin." ]
+                      [ str ("Hello, " + user.FamilyName + ".") ]
                   safeComponents ] ] ]
 
 let info =
@@ -447,20 +485,24 @@ let subPageView model dispatch =
     | UserPage -> UserDetails.view lStr ((model.User |> Option.map (fun u -> u.User))) dispatch
     | LoginPage logPage -> Login.view logPage lStr (LoginPageMsg >> SubPageMsg >> dispatch)
     | RegisterPage regPage -> Register.view regPage lStr (RegisterPageMsg >> SubPageMsg >> dispatch)
+    | InsertPage insertPage -> Insert.view insertPage lStr (InsertPageMsg >> SubPageMsg >> dispatch)
+    | SavedQueriesPage savedQueriesPage -> SavedQueries.view savedQueriesPage lStr (SavedQueriesPageMsg >> SubPageMsg >> dispatch)
 
 let view (model : Model) (dispatch : Msg -> unit) =
     div [ ]
         [ navBrand model.Language (model.User |> Option.map (fun u -> u.User)) dispatch
           Container.container [ ]
               [ Columns.columns [ ]
-                  [ Column.column [ Column.Width (Screen.All, Column.Is3) ]
-                      [ menu ]
+                  [ //Column.column [ Column.Width (Screen.All, Column.Is3) ]
+                      //[]//[ menu ]
                     Column.column [ Column.Width (Screen.All, Column.Is9) ]
-                      [ breadcrump
-                        hero
-                        info
+                      [ //breadcrump model.SubPage
+                        match model.User with
+                        | Some user -> hero user.User
+                        | None -> div [] []
+                        //info
                         subPageView model dispatch
-                        columns model dispatch
+                        //columns model dispatch
                         ] ] ] ]
 
 #if DEBUG

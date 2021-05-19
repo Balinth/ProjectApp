@@ -21,6 +21,7 @@
     <Compile Include="../Shared/Language.fs" />
     <Compile Include="Security.fs" />
     <Compile Include="DatabaseAccess.fs" />
+    <Compile Include="CRUD.fs" />
     <Compile Include="DynamicDBAccess.fs" />
     <Compile Include="Server.fs" />
   </ItemGroup>
