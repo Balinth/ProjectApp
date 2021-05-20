@@ -92,7 +92,6 @@ type SecureRequest<'t> = {
     Token : Token
     Body : 't
 }
-
 type SecureResponse<'t> = Async<Result<'t, APIError list>>
 
 module Route =
@@ -112,6 +111,5 @@ type ISecureAPI = {
     listSavedQueries : SecureRequest<unit> -> SecureResponse<QueryInfo list>
     modifyUser : SecureRequest<UserInfo> -> SecureResponse<UserInfo>
     insert : SecureRequest<string> -> SecureResponse<unit>
-    //AddProject : SecureRequest<string> -> SecureResponse<
 }
 

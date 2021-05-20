@@ -22,6 +22,9 @@ let addToDictionary (dict:IDictionary<'a,'b>) key value =
     let localValue = value // typeof<localValue> = 'b
     dict.[key] <- localValue
 
+let mutable variable = 1
+variable <- 2
+
 
 let a = 10
 let b = 10
@@ -31,3 +34,5 @@ let hamis = a <> b
 
 let items = [1;0]
 let moreItems = 2 :: items // [2;1;0]
+
+let 
