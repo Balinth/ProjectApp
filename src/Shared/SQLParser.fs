@@ -128,8 +128,6 @@ let expressionParsers<'c> (columnP : Parser<Column<'c>,BasicLabel,BasicParserErr
         <|> (dataLiteralP |>> FieldExpr.Value)
         <|> (braceP fieldExprP |>> FieldExpr.BracedFieldExpr)
 
-    let originalTermP =  termP
-
     let binaryExprRebuilder exprType (firstTerm, extraTerms) =
         List.fold (fun expr (op, nextExpr) ->
             exprType (expr,op,nextExpr)) firstTerm extraTerms
@@ -364,7 +362,6 @@ let insertP dbSpecificASTError databaseParser =
             )
         |>> (fun col -> table, col)
     )
-    //.>. braceP columnListP
     .> pstringInsensitive "values"
     .>. braceP valueListP
     .> pchar ';'
@@ -375,28 +372,5 @@ let insertP dbSpecificASTError databaseParser =
         | Error errors ->
             failP (errors |> dbSpecificASTError |> CustomError)
             <?> NoLabelSpecified
-        //match columns, data with
-        //| (columns,data) when columns.Length = data.Length ->
-        //    let statement = InsertStatement.create dbSchema table
-        //    returnP NoLabelSpecified ()
-        //| _ ->
-        //    failP (InsertColumnAndDataCountMismatch(columns,data) |> SQLASTError |> CustomError)
-        //    <?> NoLabelSpecified
 
     )
-    //|> bindP (fun ((table,columns),data) ->
-    //    let tablesOfColumns =
-    //        columns
-    //        |> List.map (fun c -> databaseParser.DatabaseSchema.GetColumnTable c.Col)
-    //        |> List.distinct
-    //    match tablesOfColumns, columns, data with
-    //    // the only OK case...
-    //    | [singleTable], cols, data when cols.Length = data.Length && singleTable = table ->
-    //        returnP NoLabelSpecified ()
-    //    // all the ways this can go wrong
-    //    | nonSingleTable, _, _ ->
-    //        fail ""
-    //
-    //
-    //
-    //    )

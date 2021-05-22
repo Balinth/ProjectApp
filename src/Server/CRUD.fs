@@ -181,7 +181,7 @@ let saveQuery (query: QueryInfo) (user:UserAuthInfo) =
         >>= stringizeSQLInsert
         |> Result.mapError (fun eList -> List.map SQLError eList)
         >>= executeInsert projectAppDBSchema
-        |> Result.map (fun _ -> query.Name)
+        |>> (fun _ -> query.Name)
         |> Result.mapError (List.map DBError)
     | Ok None -> [InsertFailed |> DBError] |> Error
     | Error error -> List.map DBError error |> Error

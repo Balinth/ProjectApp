@@ -320,8 +320,8 @@ let lift2 labelFun f xP yP =
 /// Combine two parsers as "A andThen B"
 let andThen p1 p2 =
     let label = AndThen ((getLabel p1), (getLabel p2))
-    (p1 ) >>= (fun p1Result ->
-    (p2 <??> label) >>= (fun p2Result ->
+    (p1 <?> label) >>= (fun p1Result ->
+    (p2 <?> label) >>= (fun p2Result ->
         returnP label (p1Result,p2Result) ))
     //<??> label
 
@@ -368,7 +368,7 @@ let orElse p1 p2 =
     {ParseFn=innerFn; Label=outerLabel}
 
 /// Infix version of orElse
-let ( <|> ) a b = orElse a b
+let ( <|> ) = orElse
 
 /// Choose any of a list of parsers
 let choice listOfParsers =

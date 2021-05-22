@@ -87,3 +87,50 @@ let rec parserErrorHungarian e =
 
 let printProjectSpecificResultHungarian (r:ParserResult<'a,BasicLabel,BasicParserError>) =
     printResultHun (simplifyAndThensLabel >> labelHungarian 0) parserErrorHungarian r
+
+(*
+
+let a = pchar 'a'
+let b = pchar 'b'
+let c = pchar 'c'
+let d = pchar 'd'
+
+let abc = a .>>. b .>>. c .>>. d
+
+run abc "abd"
+|> printProjectSpecificResultHungarian
+
+let err1 =
+    """"  "Sor:0 Oszlop:2
+    abd
+      ^Váratlan karakter: 'd' Hiba elemzés közben: Karakter:'a' és utána Karakter:'b' és utána Karakter:'c' és utána Karakter:'d'"""
+
+let err2 =
+    """"  "Sor:0 Oszlop:2
+abd
+  ^Váratlan karakter: 'd' Hiba elemzés közben: Sorban:
+        Karakter:'a';
+        Karakter:'b';
+        Karakter:'c';
+        Karakter:'d'" """
+
+
+type Point = {
+    X: int
+    Y: int
+}
+
+let createPoint (x, y) = {X = x; Y = y}
+let onlyXPoint (x, y) =
+    if y = 0 then
+        returnP NoLabelSpecified (x,y)
+    else
+        failP (UnexpectedChar (string y)) <?> NoLabelSpecified
+let xP = pint
+let yP = pint
+let pointP =
+    xP .>>. yP
+    >>= onlyXPoint
+    |>> createPoint
+
+*)

@@ -19,7 +19,7 @@ let tests =
       insertP ProjectSpecificError.SQLASTError projectAppDBP
 
     let createInsertValue table columns =
-        DatabaseAccess.createInsert table columns
+        CRUD.createInsert table columns
         |> function
         | Ok insert -> insert
         | Error errs -> sprintf "Incorrect expected insert statement initialization! %A" errs |> failwith

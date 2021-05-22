@@ -292,10 +292,10 @@ let navBrand currentLang (user:UserInfo option) dispatch =
                                 ]
                             );
                             [
-                                Navbar.Item.a [ ]
-                                    [ str "Orders" ]
-                                Navbar.Item.a [ ]
-                                    [ str "Payments" ]
+                               // Navbar.Item.a [ ]
+                               //     [ str "Orders" ]
+                               // Navbar.Item.a [ ]
+                               //     [ str "Payments" ]
                             ]
                         ])
                     Navbar.End.div [] [
