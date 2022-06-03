@@ -1,3 +1,5 @@
+# This was my thesis project app.
+
 # Setting up environment
 
 1. The server expects a ServerSecret environment variable with a binary guid in base64 encoding as value.
